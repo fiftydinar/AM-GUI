@@ -261,7 +261,7 @@ function runSandboxTask(sender, { pm, action, args, stdinScript, appName }) {
     }
     let settled = false;
     let output = '';
-    const passwordRegex = /mot de passe.*:|password.*:/i;
+    const passwordRegex = /\[sudo\]|mot de passe.*:|password.*:/i;
     const send = (payload) => {
       if (!sender) return;
       try {
@@ -528,7 +528,7 @@ ipcMain.handle('am-action', async (event, action, software) => {
       });
       child.onData((txt) => {
         output += txt;
-        if (/mot de passe.*:|password.*:/i.test(txt)) {
+        if (/\[sudo\]|mot de passe.*:|password.*:/i.test(txt)) {
           // Demander le mot de passe au renderer via IPC
           if (event.sender) event.sender.send('password-prompt', { id });
         }
@@ -613,7 +613,7 @@ ipcMain.handle('install-start', async (event, name) => {
     const txt = chunk.toString();
     output += txt;
     // Détection du prompt mot de passe sudo
-    if (/mot de passe.*:|password.*:/i.test(txt)) {
+    if (/\[sudo\]|mot de passe.*:|password.*:/i.test(txt)) {
       // Demander le mot de passe au renderer via IPC
       wc.send('password-prompt', { id });
       // Attendre la réponse avant d'envoyer le mot de passe au process
@@ -770,7 +770,7 @@ ipcMain.handle('updates-start', async (event) => {
   child.onData((txt) => {
     output += txt;
     send({ kind: 'data', chunk: txt });
-    if (/mot de passe.*:|password.*:/i.test(txt)) {
+    if (/\[sudo\]|mot de passe.*:|password.*:/i.test(txt)) {
       try { wc.send('password-prompt', { id }); }
       catch(_) {}
     }
@@ -885,6 +885,25 @@ ipcMain.handle('list-apps-detailed', async () => {
           /^TOTAL/i,
           /^\*has/i
         ];
+        // curEntry tracks the current ◆ entry so continuation lines can be
+        // appended to its description (descriptions can span multiple lines).
+        let curName = null;
+        let curDesc = null;
+        let curInCatalog = false;
+        const flushEntry = () => {
+          if (!curName) return;
+          if (!curInCatalog) {
+            installedFromCatalog.add(curName);
+            if (curDesc) installedDesc.set(curName, curDesc);
+          } else {
+            catalogSet.add(curName);
+            if (curDesc) catalogDesc.set(curName, curDesc);
+          }
+          diamondSet.add(curName);
+          curName = null;
+          curDesc = null;
+        };
+
         for (const raw of lines) {
           const line = raw.trim();
           if (line === '') {
@@ -892,32 +911,35 @@ ipcMain.handle('list-apps-detailed', async () => {
             // we're not yet in the catalog, switch to catalog mode. Subsequent
             // ◆ entries will then be catalog items.
             if (seenAppEntry && !inCatalog) {
+              flushEntry();
               inCatalog = true;
+            } else {
+              flushEntry();
             }
             continue;
           }
-          if (!line.startsWith('\u25c6')) continue; // ignore non-◆ lines
-          const rest = line.slice(1).trim();
-          const colonIdx = rest.indexOf(':');
-          let desc = null;
-          let left = rest;
-          if (colonIdx !== -1) {
-            left = rest.slice(0, colonIdx).trim();
-            desc = rest.slice(colonIdx + 1).trim();
-            if (desc === '') desc = null;
+          if (line.startsWith('\u25c6')) {
+            flushEntry();
+            const rest = line.slice(1).trim();
+            const colonIdx = rest.indexOf(':');
+            let left = rest;
+            let desc = null;
+            if (colonIdx !== -1) {
+              left = rest.slice(0, colonIdx).trim();
+              desc = rest.slice(colonIdx + 1).trim() || null;
+            }
+            const name = left.split(/\s+/)[0].trim();
+            if (ignoreNamePatterns.some(re => re.test(name))) continue;
+            curName = name;
+            curDesc = desc;
+            curInCatalog = inCatalog;
+            seenAppEntry = true;
+          } else if (curName && curInCatalog) {
+            // continuation line: append to current catalog entry description
+            curDesc = curDesc ? curDesc + ' ' + line : line;
           }
-          const name = left.split(/\s+/)[0].trim();
-          if (ignoreNamePatterns.some(re => re.test(name))) continue;
-          if (!inCatalog) {
-            installedFromCatalog.add(name);
-            if (desc) installedDesc.set(name, desc);
-          } else {
-            catalogSet.add(name);
-            if (desc) catalogDesc.set(name, desc);
-          }
-          diamondSet.add(name);
-          seenAppEntry = true;
         }
+        flushEntry(); // flush the last entry
       } catch (e) {
         // ignore parse errors from catalog
       }
@@ -982,6 +1004,16 @@ ipcMain.handle('list-apps-detailed', async () => {
         }
       }
 
+      // Build bundle-child map: apps whose description says
+      // "This script installs the full 'X' suite" are children of X.
+      // When X is installed the child should be hidden from the catalog.
+      const bundleChildOf = {};
+      const suitePattern = /installs the full "([^"]+)" suite/i;
+      for (const [name, desc] of catalogDesc) {
+        const m = suitePattern.exec(desc);
+        if (m) bundleChildOf[name] = m[1].toLowerCase();
+      }
+
       const allSet = new Set([...catalogSet, ...installedSet]);
       const all = Array.from(allSet).map(name => ({
         name,
@@ -997,7 +1029,7 @@ ipcMain.handle('list-apps-detailed', async () => {
         version: installedDesc.get(name) || null,
         desc: catalogDesc.get(name) || null
       }));
-      return resolve({ installed, all, pmFound: true });
+      return resolve({ installed, all, pmFound: true, bundleChildOf });
     } catch (e) {
       return resolve({ installed: [], all: [], pmFound: true, error: 'Erreur interne lors du parsing.' });
     }
