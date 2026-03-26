@@ -1360,7 +1360,7 @@
       'sandbox.unsupported.desc': '{name} nije AppImage, te ne može biti sandboxovan.',
       'sandbox.unsupported.ok': 'Razumem',
       'sandbox.forbidden.title': 'Sandbox nije dostupan',
-      'sandbox.forbidden.desc': '{name} je AppImage, ali sandboxovanje je isključeno za ovu aplikaciju kako bi se izbegli problemi sopstvenog sandboxa.',
+      'sandbox.forbidden.desc': '{name} je AppImage, ali sandboxovanje je isključeno za ovu aplikaciju kako bi se izbegli problemi njegovog sopstvenog sandboxa.',
       'sandbox.forbidden.ok': 'Razumem',
       'details.back': '← Nazad',
       'details.desc': 'Opis',
