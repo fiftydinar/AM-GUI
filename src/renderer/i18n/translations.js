@@ -983,7 +983,6 @@
       'sandbox.forbidden.ok': 'Entendido',
     },
     pt: {
-      // Czech characters may be needed later; minimal support provided
       'tabs.categories': 'Categorias',
       'missingPm.title': 'Gestor de pacotes necessário',
       'missingPm.desc': 'AM-GUI não encontrou am ou appman neste sistema.',
