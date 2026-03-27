@@ -356,7 +356,52 @@ if (window.electronAPI?.onUpdatesProgress) {
         // capture pre-update AM-VERIFIED SHA256
         await capturePreUpdateVerified(msg.id);
       } else if (msg.kind === 'done' || msg.kind === 'error') {
-        // Wait a bit for the backend to finish writing files, then capture post-update and refine UI
+        // If backend provided an authoritative updatedApps array, apply it immediately
+        try {
+          if (Array.isArray(msg.updatedApps)) {
+            // collect names of apps that were actually changed according to backend
+            const changedNames = msg.updatedApps
+              .filter(entry => entry && entry.changed === true && entry.name)
+              .map(entry => String(entry.name).toLowerCase());
+
+            if (changedNames.length > 0) {
+              if (updateFinalMessage) updateFinalMessage.textContent = t('updates.updatedApps');
+              if (updatedAppsIcons) {
+                updatedAppsIcons.innerHTML = '';
+                changedNames.forEach(nameLower => {
+                  const appObj = state.allApps && state.allApps.find(a => String(a.name).toLowerCase() === nameLower);
+                  const displayName = appObj ? appObj.name : nameLower;
+                  const displayVersion = appObj && appObj.version ? appObj.version : '';
+                  const wrapper = document.createElement('div'); wrapper.className = 'updated-item';
+                  const img = document.createElement('img');
+                  img.src = getIconUrl(displayName);
+                  img.alt = displayName;
+                  img.onerror = () => { img.src = 'https://raw.githubusercontent.com/Portable-Linux-Apps/Portable-Linux-Apps.github.io/main/icons/blank.png'; };
+                  const meta = document.createElement('div'); meta.className = 'updated-meta';
+                  const title = document.createElement('div'); title.className = 'updated-name'; title.textContent = displayName;
+                  const ver = document.createElement('div'); ver.className = 'updated-version'; ver.textContent = displayVersion ? String(displayVersion) : '';
+                  if (!displayVersion) ver.hidden = true;
+                  meta.appendChild(title); meta.appendChild(ver);
+                  wrapper.appendChild(img); wrapper.appendChild(meta);
+                  updatedAppsIcons.appendChild(wrapper);
+                });
+              }
+            } else {
+              // No apps changed according to backend summary
+              // 'updates.ready' exists in translations; replace with 'updates.none' if you add that key
+              if (updateFinalMessage) updateFinalMessage.textContent = t('updates.ready');
+              if (updatedAppsIcons) updatedAppsIcons.innerHTML = '';
+            }
+
+            if (updateResult) updateResult.style.display = 'block';
+            // refresh apps list so versions/icons are consistent
+            setTimeout(() => { loadApps().then(applySearch); }, 400);
+          }
+        } catch (err) {
+          console.error('Failed to apply backend updatedApps summary', err);
+        }
+
+        // Still run the SHA comparator as a refinement/fallback (existing behavior)
         setTimeout(() => {
           capturePostUpdateAndApply(msg.id).catch(e => console.error('post-verify failed', e));
         }, 600);
