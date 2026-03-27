@@ -232,25 +232,32 @@ async function readVerifiedShaForApp(appName) {
       const tryPaths = [
         `/opt/${appName}/AM-VERIFIED`
       ];
-      // If renderer can ask for XDG_CONFIG_HOME / HOME via getEnv, include appman path
+
+      // Prefer host-level env names
       if (typeof window.electronAPI?.getEnv === 'function') {
         try {
-          const xdg = await window.electronAPI.getEnv('XDG_CONFIG_HOME');
+          const xdg = await window.electronAPI.getEnv('HOST_XDG_CONFIG_HOME') || await window.electronAPI.getEnv('XDG_CONFIG_HOME');
           if (xdg) {
             tryPaths.push(`${xdg.replace(/\/$/, '')}/appman/appman-config/${appName}/AM-VERIFIED`);
           } else {
-            const home = await window.electronAPI.getEnv('HOME');
+            const home = await window.electronAPI.getEnv('HOST_HOME') || await window.electronAPI.getEnv('HOME');
             if (home) tryPaths.push(`${home.replace(/\/$/, '')}/.config/appman/appman-config/${appName}/AM-VERIFIED`);
           }
         } catch (_) {}
       } else {
-        // Optionally the backend can set window.__userXdgConfig or window.__userHomePath for the renderer to use.
-        if (typeof window.__userXdgConfig === 'string' && window.__userXdgConfig) {
+        // renderer-side fallbacks: prefer host-prefixed globals
+        if (typeof window.__hostXdgConfig === 'string' && window.__hostXdgConfig) {
+          tryPaths.push(`${window.__hostXdgConfig.replace(/\/$/, '')}/appman/appman-config/${appName}/AM-VERIFIED`);
+        } else if (typeof window.__hostHomePath === 'string' && window.__hostHomePath) {
+          tryPaths.push(`${window.__hostHomePath.replace(/\/$/, '')}/.config/appman/appman-config/${appName}/AM-VERIFIED`);
+        } else if (typeof window.__userXdgConfig === 'string' && window.__userXdgConfig) {
+          // keep backward compatibility
           tryPaths.push(`${window.__userXdgConfig.replace(/\/$/, '')}/appman/appman-config/${appName}/AM-VERIFIED`);
         } else if (typeof window.__userHomePath === 'string' && window.__userHomePath) {
           tryPaths.push(`${window.__userHomePath.replace(/\/$/, '')}/.config/appman/appman-config/${appName}/AM-VERIFIED`);
         }
       }
+
       for (const p of tryPaths) {
         try {
           const content = await window.electronAPI.readFile(p);
