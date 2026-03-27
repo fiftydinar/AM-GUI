@@ -102,14 +102,26 @@ const passwordWaiters = new Map();
    New helper utilities
    --------------------------- */
 
+// --- appman path helpers (prefer HOST_ env vars) ---
 function expandPath(input) {
   if (!input || typeof input !== 'string') return input;
   let s = input.trim();
+
+  // prefer HOST_HOME when available, otherwise fallback to HOME/os.homedir()
+  const hostHome = process.env.HOST_HOME || process.env.HOME || (os && typeof os.homedir === 'function' ? os.homedir() : '');
+
   // Expand leading ~
-  if (s === '~') return os.homedir();
-  if (s.startsWith('~/')) s = path.join(os.homedir(), s.slice(2));
-  // Expand $HOME or ${HOME}
-  s = s.replace(/\$\{HOME\}|\$HOME/g, os.homedir());
+  if (s === '~') return hostHome;
+  if (s.startsWith('~/')) s = path.join(hostHome, s.slice(2));
+
+  // Expand $HOME / ${HOME} to HOST_HOME if present, otherwise to HOME
+  const homeToken = hostHome;
+  s = s.replace(/\$\{HOME\}|\$HOME/g, homeToken);
+
+  // Expand HOST_XDG_CONFIG_HOME or XDG_CONFIG_HOME when embedded ($HOST_XDG_CONFIG_HOME)
+  const hostXdg = process.env.HOST_XDG_CONFIG_HOME || process.env.XDG_CONFIG_HOME || '';
+  if (hostXdg) s = s.replace(/\$\{HOST_XDG_CONFIG_HOME\}|\$HOST_XDG_CONFIG_HOME/g, hostXdg);
+
   return s;
 }
 
@@ -119,21 +131,26 @@ function expandPath(input) {
  * The file is expected to contain one meaningful line only; we return the first non-empty non-comment token.
  * Expands leading ~ and $HOME.
  */
-function readAppmanConfigBase(cfgBase) {
+function readAppmanConfigBase(providedCfgBase) {
   try {
+    // If caller provided a cfgBase use it, otherwise prefer HOST_XDG_CONFIG_HOME then XDG_CONFIG_HOME then ~/.config
+    const base = providedCfgBase && typeof providedCfgBase === 'string'
+      ? providedCfgBase
+      : (process.env.HOST_XDG_CONFIG_HOME || process.env.XDG_CONFIG_HOME || path.join(process.env.HOST_HOME || process.env.HOME || (os && typeof os.homedir === 'function' ? os.homedir() : ''), '.config'));
+
+    const cfgBase = expandPath(base);
     const configFile = path.join(cfgBase, 'appman', 'appman-config');
     if (!fs.existsSync(configFile)) return null;
     const raw = fs.readFileSync(configFile, 'utf8');
     if (!raw) return null;
-    // single meaningful line; take the first non-empty, non-comment line
     const lines = raw.split(/\r?\n/);
     for (let line of lines) {
       if (!line) continue;
       line = line.trim();
       if (!line || line.startsWith('#')) continue;
-      // token is first whitespace-separated token
       const token = line.split(/\s+/)[0];
       if (!token) continue;
+      // expand token as it may contain ~ or $HOME
       return expandPath(token);
     }
     return null;
@@ -148,12 +165,12 @@ function readAppmanConfigBase(cfgBase) {
  * This is PM-agnostic because am --user and appman both write the same appman-config.
  */
 function verifiedPathsForApp(appName) {
-  const cfgBase = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || '', '.config');
-  const appmanBase = readAppmanConfigBase(cfgBase); // may be null
+  // build candidate verified file paths preferring host config base
+  const cfgBase = process.env.HOST_XDG_CONFIG_HOME || process.env.XDG_CONFIG_HOME || path.join(process.env.HOST_HOME || process.env.HOME || (os && typeof os.homedir === 'function' ? os.homedir() : ''), '.config');
+  const appmanBase = readAppmanConfigBase(cfgBase);
   const candidates = [];
   if (appmanBase) candidates.push(path.join(appmanBase, appName, 'AM-VERIFIED'));
   candidates.push(path.join('/opt', appName, 'AM-VERIFIED'));
-  // include raw config file as last resort (rare)
   try {
     const rawConfigFile = path.join(cfgBase, 'appman', 'appman-config');
     if (fs.existsSync(rawConfigFile)) candidates.push(rawConfigFile);
@@ -166,8 +183,8 @@ function verifiedPathsForApp(appName) {
  * Preference follows verifiedPaths order: appmanBase/<app>/<app>, /opt/<app>/<app>.
  */
 function installedFileCandidates(appName) {
-  const cfgBase = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || '', '.config');
-  const appmanBase = readAppmanConfigBase(cfgBase); // may be null
+  const cfgBase = process.env.HOST_XDG_CONFIG_HOME || process.env.XDG_CONFIG_HOME || path.join(process.env.HOST_HOME || process.env.HOME || (os && typeof os.homedir === 'function' ? os.homedir() : ''), '.config');
+  const appmanBase = readAppmanConfigBase(cfgBase);
   const candidates = [];
   if (appmanBase) candidates.push(path.join(appmanBase, appName, appName));
   candidates.push(path.join('/opt', appName, appName));
