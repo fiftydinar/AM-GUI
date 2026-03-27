@@ -98,6 +98,144 @@ const activeInstalls = new Map();
 const activeUpdates = new Map();
 const passwordWaiters = new Map();
 
+/* ---------------------------
+   New helper utilities
+   --------------------------- */
+
+function expandPath(input) {
+  if (!input || typeof input !== 'string') return input;
+  let s = input.trim();
+  // Expand leading ~
+  if (s === '~') return os.homedir();
+  if (s.startsWith('~/')) s = path.join(os.homedir(), s.slice(2));
+  // Expand $HOME or ${HOME}
+  s = s.replace(/\$\{HOME\}|\$HOME/g, os.homedir());
+  return s;
+}
+
+/**
+ * Read the appman "appman-config" file and return the single base path it contains.
+ * Returns a string path or null.
+ * The file is expected to contain one meaningful line only; we return the first non-empty non-comment token.
+ * Expands leading ~ and $HOME.
+ */
+function readAppmanConfigBase(cfgBase) {
+  try {
+    const configFile = path.join(cfgBase, 'appman', 'appman-config');
+    if (!fs.existsSync(configFile)) return null;
+    const raw = fs.readFileSync(configFile, 'utf8');
+    if (!raw) return null;
+    // single meaningful line; take the first non-empty, non-comment line
+    const lines = raw.split(/\r?\n/);
+    for (let line of lines) {
+      if (!line) continue;
+      line = line.trim();
+      if (!line || line.startsWith('#')) continue;
+      // token is first whitespace-separated token
+      const token = line.split(/\s+/)[0];
+      if (!token) continue;
+      return expandPath(token);
+    }
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+/**
+ * Return candidate verified-file paths (preferred-first) for an appName.
+ * Preference: appman config base if present, then /opt/<app>/AM-VERIFIED.
+ * This is PM-agnostic because am --user and appman both write the same appman-config.
+ */
+function verifiedPathsForApp(appName) {
+  const cfgBase = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || '', '.config');
+  const appmanBase = readAppmanConfigBase(cfgBase); // may be null
+  const candidates = [];
+  if (appmanBase) candidates.push(path.join(appmanBase, appName, 'AM-VERIFIED'));
+  candidates.push(path.join('/opt', appName, 'AM-VERIFIED'));
+  // include raw config file as last resort (rare)
+  try {
+    const rawConfigFile = path.join(cfgBase, 'appman', 'appman-config');
+    if (fs.existsSync(rawConfigFile)) candidates.push(rawConfigFile);
+  } catch(_) {}
+  return candidates;
+}
+
+/**
+ * Return candidate installed-file paths (preferred-first) for an appName.
+ * Preference follows verifiedPaths order: appmanBase/<app>/<app>, /opt/<app>/<app>.
+ */
+function installedFileCandidates(appName) {
+  const cfgBase = process.env.XDG_CONFIG_HOME || path.join(process.env.HOME || '', '.config');
+  const appmanBase = readAppmanConfigBase(cfgBase); // may be null
+  const candidates = [];
+  if (appmanBase) candidates.push(path.join(appmanBase, appName, appName));
+  candidates.push(path.join('/opt', appName, appName));
+  return candidates;
+}
+
+// Read SHA256 line from AM-VERIFIED file, or null if absent.
+function readShaFromAMVerified(verifiedPath) {
+  try {
+    if (!verifiedPath || !fs.existsSync(verifiedPath)) return null;
+    const txt = fs.readFileSync(verifiedPath, 'utf8');
+    if (!txt) return null;
+    const m = txt.match(/^SHA256:\s*([a-f0-9]{64})/im);
+    if (m) return m[1].toLowerCase();
+    return null;
+  } catch (e) {
+    return null;
+  }
+}
+
+// compute SHA256 of a file (streamed), returns hex string
+function computeFileSha256(filepath) {
+  return new Promise((resolve, reject) => {
+    try {
+      const h = require('crypto').createHash('sha256');
+      const s = fs.createReadStream(filepath);
+      s.on('error', (err) => reject(err));
+      s.on('data', (chunk) => h.update(chunk));
+      s.on('end', () => resolve(h.digest('hex')));
+    } catch (e) {
+      reject(e);
+    }
+  });
+}
+
+/**
+ * Get installed app names from `pm -f`. Filter to entries that have a candidate path present.
+ * Returns array of names.
+ */
+async function getInstalledAppsFromPm(pm) {
+  try {
+    const { stdout } = await new Promise((res) => {
+      exec(`${pm} -f`, (err, out) => res({ err, stdout: out || '' }));
+    });
+    if (!stdout) return [];
+    const tokens = stdout.split(/[\s,;|]+/).map(t => String(t || '').trim()).filter(Boolean);
+    const uniq = Array.from(new Set(tokens));
+    const installed = [];
+    for (const t of uniq) {
+      if (!/^[A-Za-z0-9_.-]+$/.test(t)) continue;
+      // check presence of any candidate path
+      const candidates = installedFileCandidates(t);
+      let exists = false;
+      for (const c of candidates) {
+        try { if (fs.existsSync(c)) { exists = true; break; } } catch(_) {}
+      }
+      if (exists) installed.push(t);
+    }
+    return installed;
+  } catch (e) {
+    return [];
+  }
+}
+
+/* ---------------------------
+   End helpers
+   --------------------------- */
+
 async function isExecutableFile(filePath) {
   if (!filePath) return false;
   try {
@@ -730,6 +868,40 @@ ipcMain.handle('install-cancel', async (event, installId) => {
 ipcMain.handle('updates-start', async (event) => {
   const pm = await detectPackageManager();
   if (!pm) return { error: "Aucun gestionnaire 'am' ou 'appman' trouvé" };
+
+  // Gather installed apps (only those with candidate paths present)
+  const installedApps = await getInstalledAppsFromPm(pm);
+
+  // Compute before SHAs
+  const beforeMap = {}; // appName => { sha, source }
+  for (const appName of installedApps) {
+    try {
+      let sha = null;
+      let source = null;
+      const vpaths = verifiedPathsForApp(appName);
+      for (const pth of vpaths) {
+        const s = readShaFromAMVerified(pth);
+        if (s) { sha = s; source = `AM-VERIFIED:${pth}`; break; }
+      }
+      if (!sha) {
+        // candidate file(s)
+        const candidates = installedFileCandidates(appName);
+        for (const candidate of candidates) {
+          try {
+            if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+              sha = await computeFileSha256(candidate);
+              source = `file:${candidate}`;
+              break;
+            }
+          } catch(_) {}
+        }
+      }
+      beforeMap[appName] = { sha, source };
+    } catch (e) {
+      beforeMap[appName] = { sha: null, source: null };
+    }
+  }
+
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
   let child;
   let output = '';
@@ -781,8 +953,72 @@ ipcMain.handle('updates-start', async (event) => {
     passwordWaiters.delete(id);
   };
   child.onExit((evt) => {
-    cleanup();
-    send({ kind: 'done', code: evt?.exitCode ?? evt?.code ?? null, signal: evt?.signal ?? null, success: (evt?.exitCode ?? evt?.code ?? 0) === 0, output });
+    // Use an async IIFE to compute after SHAs and send summary
+    (async () => {
+      cleanup();
+      // Compute after SHAs
+      const afterMap = {};
+      for (const appName of installedApps) {
+        try {
+          let sha = null;
+          let source = null;
+          const vpaths = verifiedPathsForApp(appName);
+          for (const pth of vpaths) {
+            const s = readShaFromAMVerified(pth);
+            if (s) { sha = s; source = `AM-VERIFIED:${pth}`; break; }
+          }
+          if (!sha) {
+            const candidates = installedFileCandidates(appName);
+            for (const candidate of candidates) {
+              try {
+                if (fs.existsSync(candidate) && fs.statSync(candidate).isFile()) {
+                  sha = await computeFileSha256(candidate);
+                  source = `file:${candidate}`;
+                  break;
+                }
+              } catch(_) {}
+            }
+          }
+          afterMap[appName] = { sha, source };
+        } catch (e) {
+          afterMap[appName] = { sha: null, source: null };
+        }
+      }
+
+      // Build updatedApps summary
+      const updatedApps = [];
+      for (const appName of installedApps) {
+        const before = beforeMap[appName]?.sha || null;
+        const after = afterMap[appName]?.sha || null;
+        let changed = null;
+        if (before && after) changed = (before !== after);
+        else if (!before && after) changed = true;
+        else if (before && !after) changed = true; // file disappeared/changed
+        else changed = null; // unknown
+        updatedApps.push({
+          name: appName,
+          beforeSha: before,
+          afterSha: after,
+          changed,
+          beforeSource: beforeMap[appName]?.source || null,
+          afterSource: afterMap[appName]?.source || null
+        });
+      }
+
+      send({ kind: 'done',
+        code: evt?.exitCode ?? evt?.code ?? null,
+        signal: evt?.signal ?? null,
+        success: (evt?.exitCode ?? evt?.code ?? 0) === 0,
+        output,
+        updatedApps
+      });
+    })().catch(err => {
+      // Fallback: still send done with output but no updatedApps on error
+      cleanup();
+      try {
+        send({ kind: 'done', code: evt?.exitCode ?? evt?.code ?? null, signal: evt?.signal ?? null, success: (evt?.exitCode ?? evt?.code ?? 0) === 0, output, updatedApps: [] });
+      } catch(_) {}
+    });
   });
   child.on?.('error', (err) => {
     const message = err?.message || '';
@@ -1144,6 +1380,3 @@ ipcMain.handle('close-window', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (win) win.destroy(); // Force la fermeture sans redemander
 });
-
-
-
