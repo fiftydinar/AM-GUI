@@ -220,65 +220,30 @@ function computeFileSha256(filepath) {
   });
 }
 
-// Get installed app names by scanning known roots AND parsing `pm -f`.
-// Returns array of unique app names (strings).
+/**
+ * Get installed app names from `pm -f`. Filter to entries that have a candidate path present.
+ * Returns array of names.
+ */
 async function getInstalledAppsFromPm(pm) {
   try {
-    const names = new Set();
-    const namePattern = /^[A-Za-z0-9_.-]+$/;
-
-    // Resolve config base preferring HOST_XDG_CONFIG_HOME / XDG_CONFIG_HOME then ~/.config (HOST_HOME/HOME)
-    const cfgBase =
-      process.env.HOST_XDG_CONFIG_HOME ||
-      process.env.XDG_CONFIG_HOME ||
-      path.join(process.env.HOST_HOME || process.env.HOME || (os && typeof os.homedir === 'function' ? os.homedir() : ''), '.config');
-
-    // Read appman-config to discover the user base, if present
-    const appmanBase = readAppmanConfigBase(cfgBase); // may be null
-
-    // Helper: check a directory for app folders, add names that have an executable matching the folder name
-    function scanAppRoot(rootDir) {
-      try {
-        if (!rootDir || !fs.existsSync(rootDir)) return;
-        const ents = fs.readdirSync(rootDir, { withFileTypes: true });
-        for (const ent of ents) {
-          if (!ent || !ent.isDirectory) continue;
-          const candidateName = ent.name;
-          if (!candidateName || !namePattern.test(candidateName)) continue;
-          const binPath = path.join(rootDir, candidateName, candidateName);
-          try {
-            if (fs.existsSync(binPath) && fs.statSync(binPath).isFile()) {
-              names.add(candidateName);
-            }
-          } catch (_) {}
-        }
-      } catch (_) {}
-    }
-
-    // 1) Scan user appman base (if found)
-    if (appmanBase) scanAppRoot(appmanBase);
-
-    // 2) Scan /opt for system installs
-    scanAppRoot('/opt');
-
-    // 3) Parse `pm -f` tokens and add them (filtered only by pattern).
-    //    We DO NOT reject tokens merely because candidate files weren't found.
-    try {
-      const { stdout } = await new Promise((res) => {
-        exec(`${pm} -f`, (err, out) => res({ err, stdout: out || '' }));
-      });
-      if (stdout) {
-        const tokens = stdout.split(/[\s,;|]+/).map(t => String(t || '').trim()).filter(Boolean);
-        for (const t of tokens) {
-          if (!namePattern.test(t)) continue;
-          names.add(t);
-        }
+    const { stdout } = await new Promise((res) => {
+      exec(`${pm} -f`, (err, out) => res({ err, stdout: out || '' }));
+    });
+    if (!stdout) return [];
+    const tokens = stdout.split(/[\s,;|]+/).map(t => String(t || '').trim()).filter(Boolean);
+    const uniq = Array.from(new Set(tokens));
+    const installed = [];
+    for (const t of uniq) {
+      if (!/^[A-Za-z0-9_.-]+$/.test(t)) continue;
+      // check presence of any candidate path
+      const candidates = installedFileCandidates(t);
+      let exists = false;
+      for (const c of candidates) {
+        try { if (fs.existsSync(c)) { exists = true; break; } } catch(_) {}
       }
-    } catch (_) {
-      // if pm -f fails, just return whatever we found by scanning
+      if (exists) installed.push(t);
     }
-
-    return Array.from(names);
+    return installed;
   } catch (e) {
     return [];
   }
