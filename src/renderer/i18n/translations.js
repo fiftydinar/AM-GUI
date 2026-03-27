@@ -1215,7 +1215,7 @@
       'missingPm.manual.copyError': 'Ne mogu da kopiram komandu.',
       'toast.cancelRequested': 'Zahtevano otkazivanje…',
       'settings.gpuTitle': 'GPU ubrzanje',
-      'settings.gpuLabel': 'Isključi GPU ubrzanje (za otklanjanje grafičkih greški)',
+      'settings.gpuLabel': 'Isključi GPU ubrzanje (radi otklanjanja grafičkih grešaka)',
       'toast.gpuDisabled': 'GPU ubrzanje će biti isključeno na sledećem pokretanju.',
       'toast.gpuEnabled': 'GPU ubrzanje će biti uključeno na sledećem pokretanju.',
       'confirm.gpuRestart': 'Restartuj aplikaciju sada kako bi primenio promenu za GPU ubrzanje?',
