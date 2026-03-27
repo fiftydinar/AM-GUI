@@ -171,10 +171,6 @@ function verifiedPathsForApp(appName) {
   const candidates = [];
   if (appmanBase) candidates.push(path.join(appmanBase, appName, 'AM-VERIFIED'));
   candidates.push(path.join('/opt', appName, 'AM-VERIFIED'));
-  try {
-    const rawConfigFile = path.join(cfgBase, 'appman', 'appman-config');
-    if (fs.existsSync(rawConfigFile)) candidates.push(rawConfigFile);
-  } catch(_) {}
   return candidates;
 }
 
@@ -919,6 +915,12 @@ ipcMain.handle('updates-start', async (event) => {
     }
   }
 
+// Debug: report what we found before running the updater
+try {
+  console.log('updates-scan-beforeMap', JSON.stringify(beforeMap, null, 2));
+} catch (e) { /* ignore logging errors */ }
+
+
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
   let child;
   let output = '';
@@ -1021,6 +1023,11 @@ ipcMain.handle('updates-start', async (event) => {
           afterSource: afterMap[appName]?.source || null
         });
       }
+
+      // Debug: report what we found after running the updater
+      try {
+        console.log('updates-scan-afterMap', JSON.stringify(afterMap, null, 2));
+      } catch (e) { /* ignore logging errors */ }
 
       send({ kind: 'done',
         code: evt?.exitCode ?? evt?.code ?? null,

@@ -233,31 +233,38 @@ async function readVerifiedShaForApp(appName) {
         `/opt/${appName}/AM-VERIFIED`
       ];
 
-      // Prefer host-level env names
-      if (typeof window.electronAPI?.getEnv === 'function') {
-        try {
-          const xdg = await window.electronAPI.getEnv('HOST_XDG_CONFIG_HOME') || await window.electronAPI.getEnv('XDG_CONFIG_HOME');
-          if (xdg) {
-            tryPaths.push(`${xdg.replace(/\/$/, '')}/appman/appman-config/${appName}/AM-VERIFIED`);
-          } else {
-            const home = await window.electronAPI.getEnv('HOST_HOME') || await window.electronAPI.getEnv('HOME');
-            if (home) tryPaths.push(`${home.replace(/\/$/, '')}/.config/appman/appman-config/${appName}/AM-VERIFIED`);
+      // Attempt to discover the appman base by reading the appman-config file
+      try {
+        let cfgDir = null;
+        if (typeof window.electronAPI?.getEnv === 'function') {
+          cfgDir = await window.electronAPI.getEnv('HOST_XDG_CONFIG_HOME') || await window.electronAPI.getEnv('XDG_CONFIG_HOME');
+          if (!cfgDir) {
+            const hostHome = await window.electronAPI.getEnv('HOST_HOME') || await window.electronAPI.getEnv('HOME');
+            if (hostHome) cfgDir = `${hostHome.replace(/\/$/, '')}/.config`;
           }
-        } catch (_) {}
-      } else {
-        // renderer-side fallbacks: prefer host-prefixed globals
-        if (typeof window.__hostXdgConfig === 'string' && window.__hostXdgConfig) {
-          tryPaths.push(`${window.__hostXdgConfig.replace(/\/$/, '')}/appman/appman-config/${appName}/AM-VERIFIED`);
-        } else if (typeof window.__hostHomePath === 'string' && window.__hostHomePath) {
-          tryPaths.push(`${window.__hostHomePath.replace(/\/$/, '')}/.config/appman/appman-config/${appName}/AM-VERIFIED`);
-        } else if (typeof window.__userXdgConfig === 'string' && window.__userXdgConfig) {
-          // keep backward compatibility
-          tryPaths.push(`${window.__userXdgConfig.replace(/\/$/, '')}/appman/appman-config/${appName}/AM-VERIFIED`);
-        } else if (typeof window.__userHomePath === 'string' && window.__userHomePath) {
-          tryPaths.push(`${window.__userHomePath.replace(/\/$/, '')}/.config/appman/appman-config/${appName}/AM-VERIFIED`);
+        } else {
+          // renderer-side globals fallback (existing)
+          if (typeof window.__hostXdgConfig === 'string' && window.__hostXdgConfig) cfgDir = window.__hostXdgConfig;
+          else if (typeof window.__hostHomePath === 'string' && window.__hostHomePath) cfgDir = `${window.__hostHomePath.replace(/\/$/, '')}/.config`;
+          else if (typeof window.__userXdgConfig === 'string' && window.__userXdgConfig) cfgDir = window.__userXdgConfig;
+          else if (typeof window.__userHomePath === 'string' && window.__userHomePath) cfgDir = `${window.__userHomePath.replace(/\/$/, '')}/.config`;
         }
-      }
 
+        if (cfgDir) {
+          const appmanCfgFile = `${cfgDir.replace(/\/$/, '')}/appman/appman-config`;
+          try {
+            const cfgContent = await window.electronAPI.readFile(appmanCfgFile);
+            if (cfgContent) {
+              const base = String(cfgContent || '').split(/\r?\n/).map(l => (l || '').trim()).find(Boolean);
+              if (base) {
+                tryPaths.push(`${base.replace(/\/$/, '')}/${appName}/AM-VERIFIED`);
+              }
+            }
+          } catch (_) { /* ignore if can't read */ }
+        }
+      } catch (_) { /* ignore */ }
+
+      // existing attempts: try tryPaths in order
       for (const p of tryPaths) {
         try {
           const content = await window.electronAPI.readFile(p);
