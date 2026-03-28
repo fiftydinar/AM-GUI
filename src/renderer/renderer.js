@@ -415,10 +415,13 @@ if (window.electronAPI?.onUpdatesProgress) {
           console.error('Failed to apply backend updatedApps summary', err);
         }
 
-        // Still run the SHA comparator as a refinement/fallback (existing behavior)
-        setTimeout(() => {
-          capturePostUpdateAndApply(msg.id).catch(e => console.error('post-verify failed', e));
-        }, 600);
+        // Only run SHA comparator when backend did not provide a non-empty updatedApps array
+        const backendHasResults = Array.isArray(msg.updatedApps) && msg.updatedApps.length > 0;
+        if (!backendHasResults) {
+          setTimeout(() => {
+            capturePostUpdateAndApply(msg.id).catch(e => console.error('post-verify failed', e));
+          }, 600);
+        }
       }
     } catch (e) {
       console.error('verified comparator handler error', e);
