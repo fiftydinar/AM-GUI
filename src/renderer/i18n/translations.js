@@ -1301,7 +1301,7 @@
       'advanced.future': 'Nove opcije će biti dodate ovde uskoro.',
       'advanced.waiting': 'Napredne funkcije još uvek nisu dostupne u UI — koristi terminal:',
       'advanced.basicIntro': 'Neke korisne komande:',
-      'advanced.cmd.help': 'help (prikazuje i objašnjava sve dostupne komande)',
+      'advanced.cmd.help': 'pomoć (prikazuje i objašnjava sve dostupne komande)',
       'advanced.cmd.list': 'prikazuje dostupne aplikacije',
       'advanced.cmd.about': 'prikazuje informacije o aplikaciji',
       'advanced.cmd.install': 'instalira aplikacije',
