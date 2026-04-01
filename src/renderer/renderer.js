@@ -3026,6 +3026,10 @@ function stripAnsiSequences(text = '') {
     .replace(/[\x07\x08]/g, '');
 }
 
+function isAmModule(name) {
+  return typeof name === 'string' && /\.am$/i.test(name);
+}
+
 function parseUpdatedApps(res){
   // Motifs purement structurels (indépendants de la langue)
   const cleanedOutput = stripAnsiSequences(res || '');
@@ -3044,7 +3048,7 @@ function parseUpdatedApps(res){
     if ((m = line.match(/^✔\s+([A-Za-z0-9._-]+)/))) name = m[1];
     else if ((m = line.match(/^\*\s*([A-Za-z0-9._-]+)\s+->/))) name = m[1];
     else if ((m = line.match(/^([A-Za-z0-9._-]+)\s*\([^)]*->[^)]*\)/))) name = m[1];
-    if (name) {
+    if (name && !isAmModule(name)) {
       updated.add(name.toLowerCase());
     }
   }
@@ -3087,6 +3091,7 @@ function parseUpdatedBlock(text) {
   const found = [];
   for (let i = startIdx; i < lines.length; i++) {
     const m = lines[i].match(/^\s*◆\s+([A-Za-z0-9._-]+)(?:\s+(.+))?/);
+    if (m && isAmModule(m[1])) continue;
     if (m) found.push({ name: m[1].toLowerCase(), ver: m[2] ? m[2].trim() : null });
   }
   // Exclure le dernier ◆ (entrée de synchronisation, pas une vraie app)
@@ -3109,6 +3114,7 @@ function handleUpdateCompletion(fullText){
     const arrowMatch = line.match(/^([A-Za-z0-9._-]+)\s*\([^)]*->\s*([^)]+)\)/);
     if (arrowMatch) {
       const appName = arrowMatch[1].toLowerCase();
+      if (isAmModule(appName)) continue;
       const newVer = arrowMatch[2].trim();
       if (newVer && !newVersions.has(appName)) newVersions.set(appName, newVer);
     }
