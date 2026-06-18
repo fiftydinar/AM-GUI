@@ -17,6 +17,7 @@
     const applySandboxBadge = typeof options.applySandboxBadge === 'function'
       ? options.applySandboxBadge
       : () => {};
+    const prettify = typeof options.prettify === 'function' ? options.prettify : null;
 
     const loadedIcons = new Set();
     let appListVirtual = [];
@@ -124,10 +125,10 @@
         return buildInstalledSection(item.__section);
       }
       const { name, installed, desc } = typeof item === 'string' ? { name: item, installed: false, desc: null } : item;
-      const label = name.charAt(0).toUpperCase() + name.slice(1);
+      const label = prettify ? prettify(name) : name.charAt(0).toUpperCase() + name.slice(1);
       const version = item?.version ? String(item.version) : null;
       const session = getActiveInstallSession() || {};
-      let shortDesc = desc || (installed ? 'Déjà présente localement.' : 'Disponible pour installation.');
+      let shortDesc = desc || (installed ? t('installed.localDesc') : t('installed.availableDesc'));
       if (shortDesc.length > 110) shortDesc = shortDesc.slice(0,107).trim() + '…';
       let actionsHTML = '';
       if (state.viewMode === 'list') {        

@@ -17,7 +17,7 @@
     if (state && state.activeCategory && state.activeCategory !== 'all') {
       const key = state.activeCategory.trim().toLowerCase();
       icon = iconMap[key] || '📦';
-      label = state.activeCategory.charAt(0).toUpperCase() + state.activeCategory.slice(1);
+      label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(state.activeCategory) : state.activeCategory;
     } else {
       icon = '🗃️';
       label = translate('categories.all');
@@ -31,7 +31,8 @@
     btn.className = 'category-btn';
     const key = name.trim().toLowerCase();
     const icon = iconMap[key] || '📦';
-    btn.innerHTML = `<span class="cat-icon">${icon}</span> <span>${name.charAt(0).toUpperCase() + name.slice(1)}</span>`;
+    const displayName = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(name) : name;
+    btn.innerHTML = `<span class="cat-icon">${icon}</span> <span>${displayName}</span>`;
     btn.onclick = onClick;
     return btn;
   }
@@ -88,7 +89,7 @@
         const count = list.length;
         const message = typeof toastMessage === 'string'
           ? toastMessage
-          : `Catégorie "${label}" : ${count} apps`;
+          : translate('categories.appCount', { label, count });
         showToast(message);
       }
     };
@@ -180,7 +181,7 @@
             activateCustomCategory({
               label: name,
               apps: detailedApps,
-              toastMessage: `Catégorie "${name}" : ${filteredApps.length} apps`
+              toastMessage: translate('categories.appCount', { label: name, count: filteredApps.length })
             });
             // notify other parts (renderer) that a custom category was activated so they can refresh UI such as featured
             try { document.dispatchEvent(new CustomEvent('category.override', { detail: { name, count: detailedApps.length } })); } catch(_) {}
@@ -208,7 +209,7 @@
             activateCustomCategory({
               label: 'autre',
               apps: uncategorizedApps,
-              toastMessage: `Autres applications : ${uncategorizedApps.length}`
+              toastMessage: translate('categories.otherAppsCount', { count: uncategorizedApps.length })
             });
           };
         }, 0);
@@ -257,14 +258,14 @@
           resetToAppsView();
           if (!Array.isArray(state.allApps) || state.allApps.length === 0) {
             setAppList([]);
-            if (showToast) showToast('Chargement des applications…');
+            if (showToast) showToast(translate('categories.loading'));
             if (loadApps) await loadApps();
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
             setAppList(state.allApps);
-            if (showToast) showToast(`Toutes les applications : ${state.allApps.length}`);
+            if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
           } else if (showToast) {
-            showToast('Aucune application trouvée.');
+            showToast(translate('categories.noneFound'));
           }
         }
       });

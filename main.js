@@ -393,7 +393,7 @@ function createWindow () {
     }
   });
 
-  // Menu contextuel (clic droit) basique pour copier / coller
+  // Menu contextuel (clic droit) basique — Electron localise automatiquement les rôles standards
   win.webContents.on('context-menu', (event, params) => {
     const { selectionText, isEditable } = params;
     const hasSelection = selectionText && selectionText.trim().length > 0;
@@ -401,28 +401,27 @@ function createWindow () {
 
     if (isEditable) {
       template.push(
-        { role: 'undo', label: 'Annuler' },
-        { role: 'redo', label: 'Rétablir' },
+        { role: 'undo' },
+        { role: 'redo' },
         { type: 'separator' },
-        { role: 'cut', label: 'Couper' },
-        { role: 'copy', label: 'Copier' },
-        { role: 'paste', label: 'Coller' },
-        { role: 'delete', label: 'Supprimer' },
+        { role: 'cut' },
+        { role: 'copy' },
+        { role: 'paste' },
+        { role: 'delete' },
         { type: 'separator' },
-        { role: 'selectAll', label: 'Tout sélectionner' }
+        { role: 'selectAll' }
       );
     } else if (hasSelection) {
       template.push(
-        { role: 'copy', label: 'Copier' },
+        { role: 'copy' },
         { type: 'separator' },
-        { role: 'selectAll', label: 'Tout sélectionner' }
+        { role: 'selectAll' }
       );
     } else {
-      // Conserver une option sélectionner tout même sans sélection
-      template.push({ role: 'selectAll', label: 'Tout sélectionner' });
+      template.push({ role: 'selectAll' });
     }
 
-    template.push({ type: 'separator' }, { role: 'toggleDevTools', label: 'Outils de développement' });
+    template.push({ type: 'separator' }, { role: 'toggleDevTools' });
     const menu = Menu.buildFromTemplate(template);
     menu.popup({ window: win });
   });

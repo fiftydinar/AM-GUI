@@ -12,8 +12,17 @@
     };
   }
 
+  function prettifyAppName(name) {
+    if (!name || typeof name !== 'string') return name;
+    return name.split('-').map(word => {
+      if (!word) return word;
+      return word.charAt(0).toUpperCase() + word.slice(1);
+    }).join(' ');
+  }
+
   window.utils = Object.freeze({
     getIconUrl,
-    debounce
+    debounce,
+    prettifyAppName
   });
 })();
