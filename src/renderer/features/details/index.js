@@ -124,7 +124,7 @@
       if (scrollShell) state.lastScrollY = scrollShell.scrollTop || 0;
       state.currentDetailsApp = app.name;
 
-      const label = app.name.charAt(0).toUpperCase() + app.name.slice(1);
+      const label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(app.name) : (app.name.charAt(0).toUpperCase() + app.name.slice(1));
       const version = app.version ? String(app.version) : null;
 
       if (detailsIcon) {

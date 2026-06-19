@@ -987,7 +987,7 @@ body.details-mode #appDetails { opacity:1; transform:translateY(0); }
 .updated-item img { width:40px; height:40px; border-radius:8px; object-fit:cover; }
 .updated-meta { display:flex; flex-direction:column; gap:2px; }
 .updated-name { font-weight:600; font-size:13px; }
-.updated-version { font-size:12px; color:var(--muted); }
+.updated-version { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
 .updates-actions-row { display:flex; flex-direction:row; align-items:center; gap:4px; justify-content:center; }
 
 .updates-toggle-icon {

@@ -65,6 +65,9 @@ const debounce = typeof appUtils.debounce === 'function'
         timer = setTimeout(() => fn(...args), delay);
       };
     };
+const prettifyAppName = typeof appUtils.prettifyAppName === 'function'
+  ? appUtils.prettifyAppName
+  : (name) => name || '';
 
 function getThemeVar(name, fallback) {
   try {
@@ -201,9 +204,9 @@ function buildTile(item){
     return createInstalledSection(item.__section);
   }
   const { name, installed, desc } = typeof item === 'string' ? { name: item, installed: false, desc: null } : item;
-  const label = name.charAt(0).toUpperCase() + name.slice(1);
+  const label = prettifyAppName(name);
   const version = item?.version ? String(item.version) : null;
-  let shortDesc = desc || (installed ? 'Déjà présente localement.' : 'Disponible pour installation.');
+  let shortDesc = desc || (installed ? t('installed.localDesc') : t('installed.availableDesc'));
   if (shortDesc.length > 110) shortDesc = shortDesc.slice(0,107).trim() + '…';
   let actionsHTML = '';
   if (state.viewMode === 'list') {
@@ -2347,7 +2350,7 @@ function showDetails(appName) {
   if (scrollShell) state.lastScrollY = scrollShell.scrollTop;
   state.currentDetailsApp = app.name;
   handleSandboxShow(app.name);
-  const label = app.name.charAt(0).toUpperCase() + app.name.slice(1);
+  const label = prettifyAppName(app.name);
   const version = app.version ? String(app.version) : null;
   if (detailsIcon) {
     detailsIcon.src = getIconUrl(app.name);
@@ -2482,7 +2485,8 @@ if (window.ui?.virtualList?.init) {
     document,
     window,
     isSandboxed: isAppSandboxed,
-    applySandboxBadge: (iconWrapper, active, appName) => applySandboxBadgeToIcon(iconWrapper, active, appName)
+    applySandboxBadge: (iconWrapper, active, appName) => applySandboxBadgeToIcon(iconWrapper, active, appName),
+    prettify: prettifyAppName
   });
   if (api) {
     virtualListApi = api;
@@ -3044,7 +3048,7 @@ function parseUpdatedApps(res){
     if ((m = line.match(/^✔\s+([A-Za-z0-9._-]+)/))) name = m[1];
     else if ((m = line.match(/^\*\s*([A-Za-z0-9._-]+)\s+->/))) name = m[1];
     else if ((m = line.match(/^([A-Za-z0-9._-]+)\s*\([^)]*->[^)]*\)/))) name = m[1];
-    if (name) {
+    if (name && !name.toLowerCase().endsWith('.am')) {
       updated.add(name.toLowerCase());
     }
   }
@@ -3052,27 +3056,33 @@ function parseUpdatedApps(res){
 }
 
 /**
- * Parser structurel inspiré de l'approche awk (indépendant de la langue).
+ * Parse the updated apps table from AM/appman output (new table format).
  *
  * appman affiche toujours 4 séparateurs dans cet ordre :
  *   sep1 → >> START OF ALL PROCESSES <<
  *   sep2 → CAN MANAGE... (en-tête)
- *   sep3 → ◆ liste initiale de tout ce qui peut être mis à jour  ← À IGNORER
- *   sep4 → résultat : ◆ apps mises à jour  OU  texte "rien à faire"  ← DÉBUT UTILE
+ *   sep3 ◆ liste initiale de tout ce qui peut être mis à jour  ← À IGNORER
+ *   sep4 → résultat : tableau des apps mises à jour  OU  texte "rien à faire"
  *   (sep5+ possibles si d'autres sections sont ajoutées après)
  *
- * Stratégie : parcourir toutes les lignes APRÈS le 4ème séparateur
- * et collecter les ◆ appname version trouvés.
+ * Le tableau AM a la forme suivante (en-têtes localisées, couleurs ANSI supprimées) :
+ *        App      Previous    Current
+ *
+ *     1.  appname  oldver      newver
+ *     2.  appname2 oldver2     newver2
+ *
+ * Stratégie : après le 4ème séparateur, chercher des lignes numérotées et extraire
+ * nom + ancienne + nouvelle version. Indépendant de la langue de l'en-tête.
  *
  * Retourne { updated: Set, newVersions: Map, hasStructure: bool }
- *   hasStructure=true  → au moins 4 séparateurs trouvés (résultat fiable, pas de fallback)
+ *   hasStructure=true  → au moins 4 séparateurs trouvés
  *   hasStructure=false → structure inconnue (fallback autorisé)
  */
 function parseUpdatedBlock(text) {
   const updated = new Set();
   const newVersions = new Map();
   const lines = text.split(/\r?\n/);
-  const SEP_SKIP = 4; // sauter les 4 premiers séparateurs
+  const SEP_SKIP = 4;
   let sepCount = 0;
   let startIdx = -1;
   for (let i = 0; i < lines.length; i++) {
@@ -3082,18 +3092,19 @@ function parseUpdatedBlock(text) {
     }
   }
   if (startIdx === -1) return { updated, newVersions, hasStructure: false };
-  // Tout ce qui suit le 4ème séparateur : chercher les ◆ appname [version]
-  // On collecte dans un tableau pour pouvoir ignorer le DERNIER (= synchronisation, pas une app)
-  const found = [];
-  for (let i = startIdx; i < lines.length; i++) {
-    const m = lines[i].match(/^\s*◆\s+([A-Za-z0-9._-]+)(?:\s+(.+))?/);
-    if (m) found.push({ name: m[1].toLowerCase(), ver: m[2] ? m[2].trim() : null });
-  }
-  // Exclure le dernier ◆ (entrée de synchronisation, pas une vraie app)
-  const appsToShow = found.slice(0, -1);
-  for (const { name, ver } of appsToShow) {
-    updated.add(name);
-    if (ver) newVersions.set(name, ver);
+
+  const blockLines = lines.slice(startIdx);
+
+  // Parse the table structurally: find numbered rows (locale-independent)
+  for (let i = 0; i < blockLines.length; i++) {
+    const m = blockLines[i].match(/^\s*\d+\.\s+([A-Za-z0-9._-]+)\s+(\S+)\s+(\S+)/);
+    if (m) {
+      const name = m[1].toLowerCase();
+      if (!name.endsWith('.am')) {
+        updated.add(name);
+        newVersions.set(name, { old: m[2], new: m[3] });
+      }
+    }
   }
   return { updated, newVersions, hasStructure: true };
 }
@@ -3110,19 +3121,19 @@ function handleUpdateCompletion(fullText){
     if (arrowMatch) {
       const appName = arrowMatch[1].toLowerCase();
       const newVer = arrowMatch[2].trim();
-      if (newVer && !newVersions.has(appName)) newVersions.set(appName, newVer);
+      if (newVer && !newVersions.has(appName) && !appName.endsWith('.am')) newVersions.set(appName, newVer);
     }
   }
   let toShow = new Set();
   if (blockUpdated.size > 0) {
-    // Apps ◆ trouvées après le dernier séparateur → résultat fiable, toute langue
+    // Apps trouvées dans le tableau après le dernier séparateur → résultat fiable
     toShow = blockUpdated;
   } else if (!hasStructure) {
     // Pas de séparateur détecté (sortie inconnue) → fallback structurel (✔, *, ->)
     const fallback = parseUpdatedApps(sanitized);
     if (fallback.size > 0) toShow = fallback;
   }
-  // Si hasStructure && blockUpdated.size === 0 : dernier bloc sans ◆ = rien mis à jour
+  // Si hasStructure && blockUpdated.size === 0 : tableau vide = rien mis à jour
   if (toShow.size > 0) {
     if (updateFinalMessage) updateFinalMessage.textContent = t('updates.updatedApps');
     if (updatedAppsIcons) {
@@ -3130,18 +3141,24 @@ function handleUpdateCompletion(fullText){
       toShow.forEach(nameLower => {
         const wrapper = document.createElement('div'); wrapper.className = 'updated-item';
         const img = document.createElement('img');
-        // nameLower comes from parsed output (lowercased). Try to find matching app object for proper casing
         const appObj = state.allApps.find(a => String(a.name).toLowerCase() === String(nameLower).toLowerCase());
-        const displayName = appObj ? (appObj.name) : nameLower;
-        // Utiliser la nouvelle version extraite du log, sinon fallback sur l'ancienne
-        const displayVersion = newVersions.get(nameLower) || (appObj && appObj.version ? appObj.version : null);
-        img.src = getIconUrl(displayName);
+        const rawName = appObj ? appObj.name : nameLower;
+        const displayName = prettifyAppName(rawName);
+        const versionInfo = newVersions.get(nameLower);
+        const fallbackVer = appObj && appObj.version ? appObj.version : null;
+        img.src = getIconUrl(rawName);
         img.alt = displayName;
         img.onerror = () => { img.src = 'https://raw.githubusercontent.com/Portable-Linux-Apps/Portable-Linux-Apps.github.io/main/icons/blank.png'; };
         const meta = document.createElement('div'); meta.className = 'updated-meta';
         const title = document.createElement('div'); title.className = 'updated-name'; title.textContent = displayName;
-        const ver = document.createElement('div'); ver.className = 'updated-version'; ver.textContent = displayVersion ? String(displayVersion) : '';
-        if (!displayVersion) ver.hidden = true;
+        const ver = document.createElement('div'); ver.className = 'updated-version';
+        if (versionInfo && typeof versionInfo === 'object' && versionInfo.old && versionInfo.new) {
+          ver.textContent = versionInfo.old + ' → ' + versionInfo.new;
+        } else {
+          const displayVersion = versionInfo || fallbackVer;
+          ver.textContent = displayVersion ? String(displayVersion) : '';
+          if (!displayVersion) ver.hidden = true;
+        }
         meta.appendChild(title);
         meta.appendChild(ver);
         wrapper.appendChild(img);
@@ -3152,7 +3169,7 @@ function handleUpdateCompletion(fullText){
   } else {
     // 0 apps à afficher
     if (hasStructure) {
-      // Structure détectée mais aucun ◆ après le 4ème séparateur → vraiment rien mis à jour
+      // Structure détectée mais tableau vide → vraiment rien mis à jour
       if (updateFinalMessage) updateFinalMessage.textContent = t('updates.none');
     } else {
       // Pas de structure connue → on ne sait pas, on affiche "terminé"
