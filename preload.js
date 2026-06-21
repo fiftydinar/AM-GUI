@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
-// Récupère l'argument --de=xxx injecté par main
+// Retrieve the --de=xxx argument injected by main
 let desktopEnv = 'generic';
 try {
   const arg = process.argv.find(a => a.startsWith('--de='));
@@ -30,7 +30,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   restartApp: () => ipcRenderer.invoke('restart-app'),
   fetchAllCategories: () => ipcRenderer.invoke('fetch-all-categories'),
   getCategoriesCache: () => ipcRenderer.invoke('get-categories-cache'),
-  // Ajout pour gestion mot de passe sudo
+  // Added for sudo password management
   onPasswordPrompt: (cb) => ipcRenderer.on('password-prompt', (e, data) => cb && cb(data)),
   sendPassword: (payload) => ipcRenderer.send('password-response', payload),
   getSandboxInfo: (appName) => ipcRenderer.invoke('sandbox-info', appName),
@@ -43,7 +43,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   },
   onSandboxProgress: (cb) => ipcRenderer.on('sandbox-progress', (e, data) => cb && cb(data)),
   closeWindow: () => ipcRenderer.invoke('close-window'),
-  onBeforeClose: (cb) => ipcRenderer.on('before-close', () => cb && cb())
+  onBeforeClose: (cb) => ipcRenderer.on('before-close', () => cb && cb()),
+  setTrayLocale: (locale) => ipcRenderer.invoke('set-tray-locale', locale)
 });
 try {
   const lArg = process.argv.find(a => a.startsWith('--locale='));

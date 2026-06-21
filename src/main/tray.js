@@ -1,10 +1,11 @@
-// Gestion de l'icône de notification (tray) pour AM-GUI
-// Exporte initTray(mainWindow) et destroyTray().
 const { Tray, Menu, nativeImage, app } = require('electron');
 const path = require('path');
 const fs = require('fs');
+const { getTrayLabels } = require('./trayI18n');
 
 let tray = null;
+let currentMainWindow = null;
+let currentLabels = getTrayLabels(null);
 
 function loadIcon() {
   const candidatesDirs = [
@@ -28,34 +29,45 @@ function loadIcon() {
   return null;
 }
 
+function buildMenu() {
+  return Menu.buildFromTemplate([
+    { label: currentLabels.open, click: () => { if (currentMainWindow) currentMainWindow.show(); } },
+    { type: 'separator' },
+    { label: currentLabels.quit, click: () => { app.quit(); } }
+  ]);
+}
+
+function rebuildTrayMenu() {
+  if (!tray) return;
+  tray.setContextMenu(buildMenu());
+}
+
+function setTrayLocale(locale) {
+  currentLabels = getTrayLabels(locale);
+  rebuildTrayMenu();
+}
+
 function initTray(mainWindow, opts = {}) {
   try {
     if (tray) return tray;
+    currentMainWindow = mainWindow;
     const icon = loadIcon();
     if (!icon) {
-      console.warn('Tray: aucune icône trouvée dans src/assets/tray — tray non créé.');
+      console.warn('Tray: no icon found in src/assets/tray — tray not created.');
       return null;
     }
     tray = new Tray(icon);
     const tooltip = opts.tooltip || 'AM-GUI';
     tray.setToolTip(tooltip);
-
-    const contextMenu = Menu.buildFromTemplate([
-      { label: 'Ouvrir AM-GUI', click: () => { if (mainWindow) mainWindow.show(); } },
-      { type: 'separator' },
-      { label: 'Quitter', click: () => { app.quit(); } }
-    ]);
-    tray.setContextMenu(contextMenu);
-
+    tray.setContextMenu(buildMenu());
     tray.on('click', () => {
       if (!mainWindow) return;
       if (mainWindow.isVisible()) mainWindow.hide();
       else { mainWindow.show(); mainWindow.focus(); }
     });
-
     return tray;
   } catch (e) {
-    console.warn('Échec initTray:', e);
+    console.warn('initTray failed:', e);
     return null;
   }
 }
@@ -66,4 +78,4 @@ function destroyTray() {
   } catch (e) { /* ignore */ }
 }
 
-module.exports = { initTray, destroyTray };
+module.exports = { initTray, destroyTray, setTrayLocale };

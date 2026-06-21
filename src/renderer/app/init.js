@@ -31,20 +31,22 @@
       const location = ev.filename ? ` at ${ev.filename}:${ev.lineno || 0}:${ev.colno || 0}` : '';
       if (toast) {
         toast.hidden = false;
-        toast.textContent = 'Erreur: ' + ev.message + (location ? (' ' + location) : '');
+        const tMsg = typeof window.t === 'function' ? window.t('error.global', { msg: ev.message }) : null;
+        toast.textContent = (tMsg || 'Error: ' + ev.message) + (location ? (' ' + location) : '');
         setTimeout(() => { toast.hidden = true; }, 8000);
       }
-      console.error('Erreur globale', ev.error || ev.message, location, ev.error && ev.error.stack ? ev.error.stack : '');
+      console.error('Global error', ev.error || ev.message, location, ev.error && ev.error.stack ? ev.error.stack : '');
     });
 
     window.addEventListener('unhandledrejection', (ev) => {
       const toast = document.getElementById('toast');
       if (toast) {
         toast.hidden = false;
-        toast.textContent = 'Promesse rejetée: ' + (ev.reason?.message || ev.reason);
+        const tMsg = typeof window.t === 'function' ? window.t('error.unhandledRejection', { msg: ev.reason?.message || ev.reason }) : null;
+        toast.textContent = tMsg || ('Unhandled rejection: ' + (ev.reason?.message || ev.reason));
         setTimeout(() => { toast.hidden = true; }, 6000);
       }
-      console.error('Rejet non géré', ev.reason);
+      console.error('Unhandled rejection', ev.reason);
     });
   }
 

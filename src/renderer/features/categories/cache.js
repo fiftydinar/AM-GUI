@@ -13,14 +13,15 @@
     } catch (_) {}
     try {
       const res = await window.electronAPI.fetchAllCategories();
-      if (!res.ok || !Array.isArray(res.categories)) throw new Error(res.error || 'Erreur catégories');
+      if (!res.ok || !Array.isArray(res.categories)) throw new Error(res.error || 'Categories error');
       categoriesCache = res.categories;
       return categoriesCache;
     } catch (error) {
       if (showToast) {
-        showToast('Erreur catégories: ' + (error.message || error));
+        const tMsg = typeof window.t === 'function' ? window.t('error.categories', { msg: error.message || error }) : null;
+        showToast(tMsg || ('Categories error: ' + (error.message || error)));
       } else {
-        console.warn('Erreur catégories', error);
+        console.warn('Categories error', error);
       }
       return [];
     }

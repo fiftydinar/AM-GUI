@@ -1,4 +1,4 @@
-// Lightbox ultra-légère pour images Markdown (initialisation après DOM prêt)
+// Ultra-light lightbox for Markdown images (initialization after DOM ready)
 function initMarkdownLightbox() {
   const mdLightbox = document.getElementById('mdLightbox');
   const mdLightboxImg = document.getElementById('mdLightboxImg');
@@ -158,7 +158,7 @@ function renderVirtualList() {
       } catch(_) {}
     }
   }
-  // --- Spacer pour scroll cohérent ---
+  // --- Spacer for consistent scroll ---
   let spacer = appsDiv.querySelector('.app-list-spacer');
   if (!spacer) {
     spacer = document.createElement('div');
@@ -167,8 +167,8 @@ function renderVirtualList() {
     spacer.style.pointerEvents = 'none';
     appsDiv.appendChild(spacer);
   }
-  // Calculer la hauteur moyenne d'une tuile (sur le lot affiché)
-  let tileHeight = 120; // fallback par défaut
+  // Calculate average tile height (over the displayed batch)
+  let tileHeight = 120; // default fallback
   const firstTile = appsDiv.querySelector('.app-tile');
   if (firstTile) {
     tileHeight = firstTile.offsetHeight || tileHeight;
@@ -179,7 +179,7 @@ function renderVirtualList() {
 }
 
 
-// --- Intégration du prompt mot de passe sudo ---
+// --- Sudo password prompt integration ---
 if (window.electronAPI && window.electronAPI.onPasswordPrompt) {
   window.electronAPI.onPasswordPrompt(async (data) => {
     if (!window.ui || !window.ui.passwordPrompt || typeof window.ui.passwordPrompt.promptPassword !== 'function') return;
@@ -211,15 +211,15 @@ function buildTile(item){
   let actionsHTML = '';
   if (state.viewMode === 'list') {
     if (!installed) {
-      let btnLabel = 'Installer';
+      let btnLabel = t('details.install');
       let actionAttr = 'install';
       let disabledAttr = '';
       if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === name){
-        btnLabel = 'Installation… ✕';
+        btnLabel = t('install.listViewCancel');
         actionAttr = 'cancel-install';
       } else {
         const pos = getQueuePosition(name);
-        if (pos !== -1) { btnLabel = 'En file (#'+pos+') ✕'; actionAttr='remove-queue'; }
+        if (pos !== -1) { btnLabel = t('install.queued', { pos }); actionAttr='remove-queue'; }
       }
       actionsHTML = `<div class="actions"><button class="inline-action install" data-action="${actionAttr}" data-app="${name}"${disabledAttr}>${btnLabel}</button></div>`;
     } else {
@@ -232,10 +232,10 @@ function buildTile(item){
   let stateBadge = '';
   if (state.viewMode !== 'list' && !installed) {
     if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === name) {
-      stateBadge = ' <span class="install-state-badge installing" data-state="installing">Installation…<button class="queue-remove-badge inline-action" data-action="cancel-install" data-app="'+name+'" title="Annuler" aria-label="Annuler">✕</button></span>';
+      stateBadge = ' <span class="install-state-badge installing" data-state="installing">'+t('install.status')+'<button class="queue-remove-badge inline-action" data-action="cancel-install" data-app="'+name+'" title="'+t('install.cancelShort')+'" aria-label="'+t('install.cancelShort')+'">✕</button></span>';
     } else {
       const pos = getQueuePosition(name);
-      if (pos !== -1) stateBadge = ' <span class="install-state-badge queued" data-state="queued">En file (#'+pos+')<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="Retirer de la file" aria-label="Retirer">✕</button></span>';
+      if (pos !== -1) stateBadge = ' <span class="install-state-badge queued" data-state="queued">'+t('install.queued', { pos }).replace(/ ✕$/, '')+'<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="'+t('queue.removeBadge')+'" aria-label="'+t('queue.removeBadgeAria')+'">✕</button></span>';
     }
   }
   const tile = document.createElement('div');
@@ -243,8 +243,9 @@ function buildTile(item){
   tile.setAttribute('data-app', name);
   const isSandboxedTile = installed && isAppSandboxed(name);
   const badgeSymbol = isSandboxedTile ? '🔒' : '✓';
+  const badgeText = t('installed.badge');
   const badgeHTML = installed
-    ? `<span class="installed-badge" aria-label="Installée" title="Installée" style="position:absolute;top:2px;right:2px;">${badgeSymbol}</span>`
+    ? `<span class="installed-badge" aria-label="${badgeText}" title="${badgeText}" style="position:absolute;top:2px;right:2px;">${badgeSymbol}</span>`
     : '';
   tile.innerHTML = `
     <div class="tile-icon" style="position:relative;display:inline-block;">
@@ -280,9 +281,9 @@ function buildTile(item){
       buildTile._count++;
     }
   }
-  tile.tabIndex = 0; // navigation clavier
+  tile.tabIndex = 0; // keyboard navigation
   tile.addEventListener('click', (ev) => {
-    if (ev.target.closest('.inline-action')) return; // ne pas ouvrir si clic sur bouton d'action
+    if (ev.target.closest('.inline-action')) return; // don't open if clicking an action button
     showDetails(name);
   });
   tile.addEventListener('keydown', (ev) => {
@@ -296,15 +297,15 @@ function buildTile(item){
 }
 // ...existing code...
 
-// Active/désactive les animations globales selon l'état
+// Toggle global animations based on state
 function setAnimationsActive(active) {
   document.body.classList.toggle('animations-active', !!active);
 }
 
-// Désactiver les animations au démarrage
+// Disable animations at startup
 setAnimationsActive(false);
 
-// Animations globales
+// Global animations
 // ...existing code...
 
 
@@ -343,11 +344,11 @@ function initXtermLog() {
   xtermLogDiv.style.display = '';
   if (installStreamLog) installStreamLog.style.display = 'none';
 }
-// --- xterm.js pour affichage terminal natif ---
+// --- xterm.js for native terminal display ---
 let xterm = null;
 let xtermFit = null;
 let xtermLogDiv = null;
-// Contrôles fenêtre
+// Window controls
 document.addEventListener('click', (e) => {
   const b = e.target.closest('.win-btn');
   if (!b) return;
@@ -377,7 +378,7 @@ const state = {
   currentDetailsApp: null,
   renderVersion: 0,
   lastScrollY: 0,
-  installed: new Set(), // ensemble des noms installés (lowercase)
+  installed: new Set(), // set of installed names (lowercase)
   bundleChildOf: {}    // { childName: parentName } – populated after loadApps
 };
 
@@ -430,18 +431,18 @@ function scheduleInstalledResort() {
   }, 150);
 }
 
-// --- (Ré)ajout gestion changement de mode d'affichage ---
+// --- (Re)add view mode change handling ---
 function updateModeMenuUI() {
-  // Mettre à jour états pressed
+  // Update pressed states
   modeOptions().forEach(opt => {
     const m = opt.getAttribute('data-mode');
     const active = m === state.viewMode;
     opt.setAttribute('aria-pressed', active ? 'true' : 'false');
   });
-  // Changer l'icône du bouton principal selon mode
+  // Change main button icon based on mode
   const iconMap = { grid:'▦', list:'≣', icons:'◻︎', cards:'🂠' };
   if (modeMenuBtn) modeMenuBtn.textContent = iconMap[state.viewMode] || '▦';
-  // Mettre à jour la classe du body selon le mode
+  // Update body class based on mode
   applyViewModeClass();
 }
 
@@ -464,7 +465,7 @@ if (modeMenuBtn && modeMenu) {
     modeMenu.hidden = true;
     modeMenuBtn.setAttribute('aria-expanded','false');
   });
-  // Ajout : gestion du clic sur les options de mode d'affichage
+  // Added: handle click on view mode options
   modeOptions().forEach(opt => {
     opt.addEventListener('click', (e) => {
       const mode = opt.getAttribute('data-mode');
@@ -481,7 +482,7 @@ if (modeMenuBtn && modeMenu) {
 function startUpdateTimer() {
   const timer = document.querySelector('.update-timer');
   if (!timer) return;
-  // Ne pas réinitialiser si déjà en cours
+  // Don't reset if already in progress
   if (updateTimerStart === null) updateTimerStart = Date.now();
   if (updateTimerInterval) return;
   const updateTimerText = () => {
@@ -508,7 +509,7 @@ updateModeMenuUI();
 
 const appsDiv = document.getElementById('apps');
 
-// --- Références DOM rétablies après nettoyage catégories ---
+// --- DOM references restored after categories cleanup ---
 const appDetailsSection = document.getElementById('appDetails');
 const backToListBtn = document.getElementById('backToListBtn');
 const detailsIcon = document.getElementById('detailsIcon');
@@ -518,13 +519,13 @@ const detailsInstallBtn = document.getElementById('detailsInstallBtn');
 const detailsUninstallBtn = document.getElementById('detailsUninstallBtn');
 const detailsGallery = document.getElementById('detailsGallery');
 const detailsGalleryInner = document.getElementById('detailsGalleryInner');
-// Éléments streaming installation
-// Galerie supprimée : toutes les images sont dans la description
+// Streaming install elements
+// Gallery removed: all images are in the description
 const installStream = document.getElementById('installStream');
 const installStreamStatus = document.getElementById('installStreamStatus');
 
 const installStreamElapsed = document.getElementById('installStreamElapsed');
-// Log, compteur de lignes et bouton log supprimés de l'UI
+// Log, line counter and log button removed from UI
 const installProgressBar = document.getElementById('installStreamProgressBar');
 const installProgressPercentLabel = document.getElementById('installStreamProgressPercent');
 const installProgressEtaLabel = document.getElementById('installStreamEta');
@@ -580,17 +581,17 @@ const sandboxState = {
 
 renderSandboxCard();
 
-// Mémoire de la session d'installation en cours
+// Current install session memory
 let activeInstallSession = {
   id: null,
   name: null,
   start: 0,
-  lines: [], // tableau de chaînes
+  lines: [], // array of strings
   done: false,
   success: null,
   code: null
 };
-// File d'attente séquentielle
+// Sequential queue
 const installQueue = []; // noms d'apps en attente (FIFO)
 
 let detailsApi = null;
@@ -668,13 +669,13 @@ setSandboxLogExpanded(false);
 function inferAppImageFromInfo(appName, info) {
   if (!info) return null;
   if (info.sandboxForbiddenReason) return false;
-  // isAppImage est définitif quand c'est un boolean (détecté via magic bytes ou sandboxé)
+  // isAppImage is definitive when it's a boolean (detected via magic bytes or sandboxed)
   if (typeof info.isAppImage === 'boolean') return info.isAppImage;
   const target = typeof info.appName === 'string' ? info.appName.toLowerCase() : '';
   if (target && appName && target !== appName.toLowerCase()) return null;
   const execPath = typeof info.execPath === 'string' ? info.execPath.toLowerCase() : '';
   if (!execPath) return null;
-  // Fallback sur l'extension si pas de détection magic bytes
+  // Fallback to extension if no magic byte detection
   return execPath.endsWith('.appimage');
 }
 
@@ -682,22 +683,22 @@ function isSandboxSupported(appName, info = sandboxState.info) {
   if (!appName) return false;
   if (info?.sandboxForbiddenReason) return false;
   
-  // Si on n'a pas encore d'info (chargement en cours), on ne sait pas encore
+  // If we don't have info yet (loading in progress), we don't know yet
   if (!info || Object.keys(info).length === 0) return true;
   
   const inferred = inferAppImageFromInfo(appName, info);
   
-  // Vérifier si l'app est installée via appman (pas juste si un exécutable existe)
+  // Check if the app is installed via appman (not just if an executable exists)
   const installedViaAppman = isAppInstalledInList(appName);
   
-  // Si l'app N'EST PAS installée via appman, on ne bloque pas
-  // (un exécutable système du même nom ne devrait pas bloquer le sandboxing futur)
+  // If the app is NOT installed via appman, don't block
+  // (a system executable with the same name should not block future sandboxing)
   if (!installedViaAppman) return true;
   
-  // Si on a une détection définitive et l'app est installée via appman, on l'utilise
+  // If we have a definitive detection and the app is installed via appman, use it
   if (inferred !== null) return inferred;
   
-  // App installée via appman mais pas de détection possible → probablement pas un AppImage
+  // App installed via appman but no detection possible → probably not an AppImage
   return false;
 }
 
@@ -796,7 +797,7 @@ function renderSandboxCard() {
   const statusKey = sandboxState.busy
     ? 'busy'
     : (!sandboxEligible
-      ? 'forbidden' // même libellé bouton pour tout non-sandboxable; popup précisera la raison
+      ? 'forbidden' // same button label for all non-sandboxable; popup will specify the reason
       : (info.sandboxed ? 'active' : (installedFlag ? 'inactive' : 'unknown')));
   const statusLabel = t(`sandbox.status.${statusKey}`) || statusKey;
   if (sandboxStatusBadge) {
@@ -995,7 +996,7 @@ function applySandboxBadgeToIcon(iconWrapper, isActive) {
   if (!iconWrapper) return;
   const badge = iconWrapper.querySelector('.installed-badge');
   if (!badge) return;
-  const label = isActive ? t('sandbox.status.active') : 'Installée';
+  const label = isActive ? t('sandbox.status.active') : t('installed.badge');
   const symbol = isActive ? '🔒' : '✓';
   badge.textContent = symbol;
   badge.setAttribute('aria-label', label);
@@ -1204,7 +1205,7 @@ sandboxLogToggle?.addEventListener('click', () => {
 
 sandboxOpenBtn?.addEventListener('click', async () => {
   if (!sandboxState.currentApp) return;
-  // Si l'info n'est pas encore chargée, attendre le chargement
+  // If info is not loaded yet, wait for loading
   if (!sandboxState.info && !sandboxState.busy) {
     setSandboxBusy(true);
     try {
@@ -1315,7 +1316,7 @@ function removeFromQueue(name){
   installQueue.splice(idx,1);
   try {
     if (typeof updateQueueIndicators === 'function') updateQueueIndicators();
-    // Debounce pour éviter double refresh si plusieurs suppressions rapides
+    // Debounce to avoid double refresh on multiple rapid removals
     if (window.__queueRefreshTimeout) clearTimeout(window.__queueRefreshTimeout);
     window.__queueRefreshTimeout = setTimeout(()=>{
       try { refreshAllInstallButtons(); } catch(e) { console.error('Erreur refreshAllInstallButtons', e); }
@@ -1330,17 +1331,17 @@ function removeFromQueue(name){
 
 function refreshDetailsInstallButtonForQueue(){
   if (!detailsInstallBtn || !detailsInstallBtn.getAttribute('data-name')) return;
-  detailsInstallBtn.classList.remove('loading'); // suppression systématique du spinner
+  detailsInstallBtn.classList.remove('loading'); // systematically remove spinner
   const name = detailsInstallBtn.getAttribute('data-name');
   if (!name) return;
   // Active en cours
   if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === name){
-    // Bouton devient annulation
+    // Button becomes cancel
     detailsInstallBtn.disabled = false;
     detailsInstallBtn.classList.remove('loading');
     detailsInstallBtn.textContent = t('install.status') + ' ✕';
     detailsInstallBtn.setAttribute('data-action','cancel-install');
-    detailsInstallBtn.setAttribute('aria-label', t('install.cancel') || 'Annuler installation en cours ('+name+')');
+    detailsInstallBtn.setAttribute('aria-label', t('install.cancel') || 'Cancel installation in progress ('+name+')');
     return;
   }
   const pos = getQueuePosition(name);
@@ -1352,7 +1353,7 @@ function refreshDetailsInstallButtonForQueue(){
     detailsInstallBtn.setAttribute('aria-label', t('install.removeQueue') || ('Retirer de la file (' + name + ')'));
     return;
   }
-  // Sinon si déjà installée, on masque ailleurs, mais reset label au cas où
+  // Otherwise if already installed, it's hidden elsewhere, but reset label just in case
   if (!detailsInstallBtn.hidden){
     detailsInstallBtn.textContent = t('details.install');
     detailsInstallBtn.classList.remove('loading');
@@ -1361,23 +1362,23 @@ function refreshDetailsInstallButtonForQueue(){
   }
 }
 
-// Synchroniser les boutons de la liste
+// Sync list buttons
 function refreshListInstallButtons(){
-  // Cible tous les boutons inline dans la liste pour gérer les états (cancel / queued)
+  // Target all inline buttons in the list to manage states (cancel / queued)
   const buttons = document.querySelectorAll('.app-tile .actions .inline-action');
   buttons.forEach(btn => {
     const name = btn.getAttribute('data-app');
     if (!name) return;
-    // Si installation active pour cette app -> bouton d'annulation
+    // If active install for this app -> cancel button
     if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === name){
       btn.textContent = t('install.status') + ' ✕';
       btn.disabled = false;
       btn.setAttribute('data-action','cancel-install');
-      btn.setAttribute('aria-label', t('install.cancel') || 'Annuler installation en cours ('+name+')');
+      btn.setAttribute('aria-label', t('install.cancel') || 'Cancel installation in progress ('+name+')');
       btn.style.display = '';
       return;
     }
-    // Si en file -> bouton retirer de la file
+    // If queued -> remove from queue button
     const pos = getQueuePosition(name);
     if (pos !== -1){
       btn.textContent = t('install.queued') ? t('install.queued').replace('{pos}', pos) : ('En file (#' + pos + ') ✕');
@@ -1387,7 +1388,7 @@ function refreshListInstallButtons(){
       btn.style.display = '';
       return;
     }
-    // Pas d'état spécial -> masquer le bouton en mode liste pour éviter actions directes
+    // No special state -> hide the button in list mode to avoid direct actions
     btn.style.display = 'none';
   });
 }
@@ -1398,10 +1399,10 @@ function refreshAllInstallButtons(){
   refreshTileBadges();
 }
 
-// Met à jour/injecte les badges d'état dans les modes non-list
+// Update/inject state badges in non-list modes
 function refreshTileBadges() {
-  if (state.viewMode === 'list') return; // list géré par les boutons
-  if (!state.installed || typeof state.installed.has !== 'function') return; // garde de sécurité
+  if (state.viewMode === 'list') return; // list handled by buttons
+  if (!state.installed || typeof state.installed.has !== 'function') return; // safety guard
   const tiles = document.querySelectorAll('.app-tile');
   tiles.forEach(tile => {
     const name = tile.getAttribute('data-app');
@@ -1411,26 +1412,26 @@ function refreshTileBadges() {
     // Supprimer badge existant
     const existing = nameEl.querySelector('.install-state-badge');
     if (existing) existing.remove();
-    if (installed) return; // pas de badge si déjà installée
+    if (installed) return; // no badge if already installed
     let badgeHtml = '';
     if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === name) {
-      // Ajouter bouton d'annulation dans le badge installation
-      badgeHtml = '<span class="install-state-badge installing" data-state="installing">Installation…<button class="queue-remove-badge inline-action" data-action="cancel-install" data-app="'+name+'" title="Annuler" aria-label="Annuler l\'installation">✕</button></span>';
+      // Add cancel button in the install badge
+      badgeHtml = `<span class="install-state-badge installing" data-state="installing">${t('install.installing')}<button class="queue-remove-badge inline-action" data-action="cancel-install" data-app="${name}" title="${t('install.cancel')}" aria-label="${t('install.cancel')}">✕</button></span>`;
     } else {
       const pos = getQueuePosition(name);
-      if (pos !== -1) badgeHtml = '<span class="install-state-badge queued" data-state="queued">En file (#'+pos+')<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="Retirer de la file" aria-label="Retirer">✕</button></span>';
+      if (pos !== -1) badgeHtml = `<span class="install-state-badge queued" data-state="queued">${t('install.queuePosition', { pos: pos })}<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="${name}" title="${t('install.removeQueue')}" aria-label="${t('install.removeQueue')}">✕</button></span>`;
     }
     if (badgeHtml) nameEl.insertAdjacentHTML('beforeend', ' ' + badgeHtml);
   });
 }
 
 function refreshQueueUI(){
-  // Rafraîchit uniquement les représentations de la file.
+  // Only refreshes queue representations.
   refreshAllInstallButtons();
 }
 
 function processNextInstall(){
-  // Ne rien lancer si une installation active non terminée
+  // Don't start anything if an active install is not finished
   if (activeInstallSession.id && !activeInstallSession.done) return;
   if (!installQueue.length) return;
   const next = installQueue.shift();
@@ -1444,7 +1445,7 @@ function processNextInstall(){
   if (inlineBtn) inlineBtn.disabled = true;
   showToast(t('toast.installing', {name: next}));
   startStreamingInstall(next).catch(() => {
-    // Fallback: exécuter via amAction puis enchaîner
+    // Fallback: run via amAction then chain
     window.electronAPI.amAction('install', next).then(()=>{
       loadApps().then(()=> applySearch());
     }).finally(()=>{
@@ -1457,7 +1458,7 @@ function processNextInstall(){
 
 function enqueueInstall(name){
   if (!name) return;
-  // Vérifier si déjà en cours ou dans la file
+  // Check if already in progress or in queue
   if ((activeInstallSession.name === name && !activeInstallSession.done) || installQueue.includes(name)) {
     showToast(t('toast.alreadyInQueue', {name}));
     return;
@@ -1475,7 +1476,7 @@ function enqueueInstall(name){
 }
 
 async function cancelActiveInstall(expectedName = null) {
-  // Toujours fermer les boîtes de dialogue de choix existantes
+  // Always close existing choice dialogs
   document.querySelectorAll('.choice-dialog').forEach(e => e.remove());
   if (!activeInstallSession || activeInstallSession.done) return;
   if (expectedName && activeInstallSession.name !== expectedName) return;
@@ -1493,7 +1494,7 @@ async function cancelActiveInstall(expectedName = null) {
     } catch (_){ }
   } catch (err) {
     if (typeof window.showCopiableError === 'function') {
-      window.showCopiableError('Erreur lors de l’annulation : ' + (err?.message || err));
+      window.showCopiableError(t('error.global', { msg: 'Cancel: ' + (err?.message || err) }));
     }
   }
 }
@@ -1504,7 +1505,7 @@ const openExternalCheckbox = document.getElementById('openExternalLinksCheckbox'
 const purgeIconsBtn = document.getElementById('purgeIconsBtn');
 const purgeIconsResult = document.getElementById('purgeIconsResult');
 const tabs = document.querySelectorAll('.tab');
-// Mise à jour
+// Updates
 let updateInProgress = false;
 let updatesXterm = null;
 let updatesXtermFit = null;
@@ -1513,7 +1514,7 @@ let updatesTerminalFallbackMode = false;
 let updatesTerminalExpanded = false;
 let updateSpinnerBusy = false;
 let activeUpdateStreamId = null;
-let updatesStreamBuffer = ''; // Buffer pour accumuler la sortie du streaming
+let updatesStreamBuffer = ''; // Buffer to accumulate streaming output
 const updateStreamWaiters = new Map();
 const updatesPanel = document.getElementById('updatesPanel');
 const advancedPanel = document.getElementById('advancedPanel');
@@ -1596,6 +1597,8 @@ if (searchFeature && typeof searchFeature.applySearch === 'function') {
   applySearch = searchFeature.applySearch;
 }
 
+const translations = window.translations || {};
+
 // Initialize featured banner (compact) feature
 // initialize featured with empty items to avoid showing the static fallback briefly at startup
 const featuredFeature = window.features?.featured?.init?.({
@@ -1607,18 +1610,10 @@ const featuredFeature = window.features?.featured?.init?.({
 const featuredBannerInitEl = document.getElementById('featuredBanner');
 if (featuredBannerInitEl) featuredBannerInitEl.hidden = !(state.activeCategory === 'all') || document.body.classList.contains('details-mode');
 
-// Featured computation is handled by the featured module now.
-function updateFeaturedItems() {
-  try {
-    if (!featuredFeature || typeof featuredFeature.updateFromState !== 'function') return;
-    featuredFeature.updateFromState();
-  } catch (e) {}
-}
-
 // wrap existing applySearch (if any) so featured refreshes after searches
 if (typeof applySearch === 'function') {
   const __origApplySearch = applySearch;
-  applySearch = () => { __origApplySearch(); try { setTimeout(() => { if (featuredFeature && typeof featuredFeature.updateFromState === 'function') featuredFeature.updateFromState(); }, 0); } catch(e) {} };
+  applySearch = () => { __origApplySearch(); try { setTimeout(() => { if (featuredFeature && typeof featuredFeature.updateFromState === 'function') featuredFeature.updateFromState(); }, 0); } catch(_) {} };
 }
 
 // Listen for category override events triggered by the categories dropdown
@@ -1636,7 +1631,7 @@ let confirmResolve = null;
 function openActionConfirm({ title, message, okLabel, intent }) {
   if (!actionConfirmModal) return Promise.resolve(false);
   actionConfirmMessage.innerHTML = message || '';
-  actionConfirmOk.textContent = okLabel || 'Valider';
+  actionConfirmOk.textContent = okLabel || t('confirm.ok');
   // Intent styling (danger / install)
   actionConfirmOk.className = 'btn';
   if (intent === 'danger') {
@@ -1680,8 +1675,7 @@ const lightboxClose = document.getElementById('lightboxClose');
 let lightboxState = { images: [], index: 0, originApp: null };
 
 const descriptionCache = new Map();
-const translations = window.translations || {};
-// --- Gestion multilingue ---
+// --- Multilingual support ---
 function getSystemLang() {
   try {
     const available = (window.translations && Object.keys(window.translations).map(k => String(k).toLowerCase())) || ['en'];
@@ -1926,17 +1920,17 @@ function applyTranslations() {
     pmPopupCtrl = null;
     pmPopupStatus = null;
   }
-  // Boutons dynamiques détails (install/uninstall)
+  // Dynamic detail buttons (install/uninstall)
   if (detailsInstallBtn) detailsInstallBtn.textContent = t('details.install');
   if (detailsUninstallBtn) detailsUninstallBtn.textContent = t('details.uninstall');
   if (installStreamStatus) installStreamStatus.textContent = t('install.status');
-  // Traduction générique de tous les éléments data-i18n et data-i18n-*
+  // Generic translation of all data-i18n and data-i18n-* elements
   const lang = getLangPref();
   // data-i18n (texte)
   document.querySelectorAll('[data-i18n]').forEach(el => {
     const key = el.getAttribute('data-i18n');
     if (translations[lang] && translations[lang][key]) {
-      // Si l'élément contient des balises (ex: <span class="mode-icon">), ne remplacer que le nœud texte principal
+      // If the element contains tags (e.g. <span class="mode-icon">), only replace the main text node
       let replaced = false;
       el.childNodes.forEach(node => {
         if (node.nodeType === Node.TEXT_NODE && !replaced) {
@@ -1944,13 +1938,13 @@ function applyTranslations() {
           replaced = true;
         }
       });
-      // Si aucun nœud texte trouvé, fallback sur textContent (cas rare)
+      // If no text node found, fallback to textContent (rare case)
       if (!replaced) {
         el.textContent = translations[lang][key];
       }
     }
   });
-  // data-i18n-html (innerHTML autorisé pour cas spécifiques)
+  // data-i18n-html (innerHTML allowed for specific cases)
   document.querySelectorAll('[data-i18n-html]').forEach(el => {
     const key = el.getAttribute('data-i18n-html');
     const localized = (translations[lang] && translations[lang][key])
@@ -1982,25 +1976,25 @@ function applyTranslations() {
       }
     }
   });
-  // Attributs spéciaux (ex: aria-label sur settingsPanel)
+  // Special attributes (e.g. aria-label on settingsPanel)
   const settingsPanel = document.getElementById('settingsPanel');
   if (settingsPanel) {
     settingsPanel.setAttribute('aria-label', t('settings.title'));
   }
-  // Titre bouton paramètres
+  // Settings button title
   const settingsBtn = document.getElementById('settingsBtn');
   if (settingsBtn) settingsBtn.title = t('settings.title') + ' (Ctrl+,)';
 
-  // Traduction de l'onglet secondaire "Catégories"
+  // Secondary tab "Categories" translation
   const tabSecondary = document.querySelector('.tab-secondary');
   if (tabSecondary) {
-    tabSecondary.textContent = t('tabs.categories') || 'Catégories';
+    tabSecondary.textContent = t('tabs.categories') || 'Categories';
   }
   setUpdateSpinnerBusy(updateSpinnerBusy);
   updateUpdatesToggleUi();
   if (!sandboxState.logBuffer) resetSandboxLog();
   refreshAllSandboxBadges();
-  // Rafraîchir la carte sandbox pour refléter la langue et les libellés dynamiques
+  // Refresh sandbox card to reflect language and dynamic labels
   try { renderSandboxCard(); } catch(_) {}
   // Si la popup non-AppImage est ouverte, re-injecter le texte traduit
   try {
@@ -2014,23 +2008,34 @@ function applyTranslations() {
   }
 }
 
-// Appliquer la langue et préparer les contrôles
+function syncTrayLocale() {
+  try {
+    const locale = getLangPref();
+    if (window.electronAPI && typeof window.electronAPI.setTrayLocale === 'function') {
+      window.electronAPI.setTrayLocale(locale);
+    }
+  } catch(_) {}
+}
+
+// Apply language and prepare controls
 function initLanguagePreferences() {
   applyTranslations();
-  // Mettre à jour l'attribut lang du HTML
+  syncTrayLocale();
+  // Update HTML lang attribute
   document.documentElement.setAttribute('lang', getLangPref());
-  // Synchroniser l'état des radios de sélection de langue avec la préférence enregistrée
+  // Sync language radio state with stored preference
   try {
     const stored = localStorage.getItem('langPref') || 'auto';
     const radios = document.querySelectorAll('input[name="langPref"]');
     radios.forEach(r => { try { r.checked = (r.value === stored); } catch(_){} });
-    // Ajouter un gestionnaire direct pour éviter toute ambiguïté de délégation
+    // Add a direct handler to avoid delegation ambiguity
     radios.forEach(r => {
       try {
         r.addEventListener('change', (ev) => {
           ev.stopPropagation();
           try { localStorage.setItem('langPref', r.value); } catch(_){ }
           try { applyTranslations(); } catch(_){ }
+          syncTrayLocale();
           try { document.documentElement.setAttribute('lang', getLangPref()); } catch(_){ }
           // Mark handled to avoid delegated double handling
           try { window.__langChangeHandled = true; } catch(_){ }
@@ -2076,16 +2081,16 @@ window.addEventListener('DOMContentLoaded', async () => {
         iconMap: CATEGORY_ICON_MAP
       });
     }
-    // Remplacer le bouton refresh par le nouveau bouton sync (après chargement du script)
+    // Replace refresh button with the new sync button (after script loads)
     if (window.syncButton && !syncBtn) {
       const { createSyncButton, replaceSyncButton } = window.syncButton;
       syncBtn = createSyncButton({
         onSync: async () => {
-          // Suppression forcée du cache fichier catégories
+          // Force delete category file cache
           if (window.electronAPI && typeof window.electronAPI.deleteCategoriesCache === 'function') {
             await window.electronAPI.deleteCategoriesCache();
           }
-          // Rafraîchir le cache JS des catégories
+          // Refresh JS category cache
           if (window.categories && typeof window.categories.resetCache === 'function') {
             window.categories.resetCache();
           }
@@ -2108,12 +2113,12 @@ window.addEventListener('DOMContentLoaded', async () => {
   }
 });
 
-// Gérer le changement de langue
+// Handle language change
 const settingsPanelLang = document.getElementById('settingsPanel');
 if (settingsPanelLang) {
   settingsPanelLang.addEventListener('change', (ev) => {
     const t = ev.target;
-    // évite double gestion si un handler direct a déjà traité
+    // avoid double handling if a direct handler already processed it
     if (window.__langChangeHandled) { window.__langChangeHandled = false; return; }
     if (t.name === 'langPref') {
       try { localStorage.setItem('langPref', t.value); } catch(_){ }
@@ -2124,10 +2129,10 @@ if (settingsPanelLang) {
   });
 }
 
-// --- Préférences (thème & mode par défaut) ---
-// S'assurer que le panneau des mises à jour est caché au démarrage (sauf si onglet updates actif)
+// --- Preferences (theme & default mode) ---
+// Ensure the update panel is hidden at startup (unless updates tab is active)
 if (updatesPanel) {
-  updatesPanel.hidden = true; // l'onglet par défaut est 'all'
+  updatesPanel.hidden = true; // default tab is 'all'
 }
 if (advancedPanel) {
   advancedPanel.hidden = true;
@@ -2200,7 +2205,7 @@ async function loadApps() {
   if (detailed.error) {
     state.allApps = [];
     state.filtered = [];
-    if (appsDiv) appsDiv.innerHTML = `<div class='empty-state'><h3>Erreur de récupération</h3><p style='font-size:13px;'>${detailed.error}</p></div>`;
+    if (appsDiv) appsDiv.innerHTML = `<div class='empty-state'><h3>${t('error.dialogTitle')}</h3><p style='font-size:13px;'>${detailed.error}</p></div>`;
     if (installedCountEl) installedCountEl.textContent = '0';
     sandboxedApps.clear();
     refreshAllSandboxBadges();
@@ -2209,7 +2214,7 @@ async function loadApps() {
   }
   state.allApps = detailed.all || [];
   state.filtered = state.allApps;
-  // Construire l'ensemble des apps installées
+  // Build the set of installed apps
   try {
     const installedNames = new Set();
     if (Array.isArray(detailed.installed)) {
@@ -2219,7 +2224,7 @@ async function loadApps() {
         else if (entry.name) installedNames.add(String(entry.name).toLowerCase());
       });
     } else {
-      // Fallback: dériver depuis allApps
+      // Fallback: derive from allApps
       state.allApps.filter(a=>a && a.installed && a.name).forEach(a=> installedNames.add(a.name.toLowerCase()));
     }
     state.installed = installedNames;
@@ -2282,7 +2287,7 @@ async function loadApps() {
 let iconObserver = null;
 function initIconObserver(){
   if ('IntersectionObserver' in window && !iconObserver){
-    // Charger plus tôt hors-écran pour réduire latence à l'apparition lors du scroll
+    // Load earlier off-screen to reduce latency on scroll appearance
     iconObserver = new IntersectionObserver(entries => {
       entries.forEach(entry => {
         if (entry.isIntersecting){
@@ -2291,15 +2296,15 @@ function initIconObserver(){
           iconObserver.unobserve(img);
         }
       });
-    }, { rootMargin: '1600px' }); // marge accrue pour charger encore plus tôt hors écran
+    }, { rootMargin: '1600px' }); // increased margin to load even earlier off-screen
   }
 }
 
 
-// Préchargement async throttlé des images encore non démarrées — démarre après rendu
+// Async throttled preloading of yet-unstarted images — starts after render
 let _prefetchScheduled = false;
 function prefetchPreloadImages(limit = 200, concurrency = 6) {
-  if (iconObserver) return; // IntersectionObserver gère déjà le préchargement anticipé
+  if (iconObserver) return; // IntersectionObserver already handles advanced preloading
   if (_prefetchScheduled) return;
   const imgs = Array.from(document.querySelectorAll('img[data-src]'));
   if (!imgs.length) return;
@@ -2346,7 +2351,7 @@ function prefetchPreloadImages(limit = 200, concurrency = 6) {
 function showDetails(appName) {
   const app = state.allApps.find(a => a.name === appName);
   if (!app) return;
-  // Mémoriser la position de scroll actuelle (shell scrollable)
+  // Remember current scroll position (scrollable shell)
   if (scrollShell) state.lastScrollY = scrollShell.scrollTop;
   state.currentDetailsApp = app.name;
   handleSandboxShow(app.name);
@@ -2357,7 +2362,7 @@ function showDetails(appName) {
     detailsIcon.onerror = () => { detailsIcon.src = 'https://raw.githubusercontent.com/Portable-Linux-Apps/Portable-Linux-Apps.github.io/main/icons/blank.png'; };
   }
   if (detailsName) {
-    // Correction : si installation annulée, ne pas afficher comme installée
+    // Fix: if install cancelled, don't show as installed
     const isActuallyInstalled = app.installed && !(activeInstallSession && activeInstallSession.name === app.name && activeInstallSession.id && !activeInstallSession.done);
     detailsName.innerHTML = isActuallyInstalled
       ? `${label}${version ? ' · ' + version : ''}`
@@ -2367,17 +2372,17 @@ function showDetails(appName) {
   applyDetailsSandboxBadge(app.name);
   if (detailsLong) detailsLong.textContent = t('details.loadingDesc', {name: app.name});
   if (detailsGallery) detailsGallery.hidden = true;
-  // Galerie supprimée : rien à cacher
+  // Gallery removed: nothing to hide
   if (detailsInstallBtn) {
     detailsInstallBtn.hidden = !!app.installed;
     detailsInstallBtn.setAttribute('data-name', app.name);
-    // Toujours retirer le spinner et réactiver le bouton
+    // Always remove spinner and re-enable the button
   detailsInstallBtn.classList.remove('loading');
   detailsInstallBtn.disabled = false;
     if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === app.name) {
       detailsInstallBtn.textContent = t('install.status') + ' ✕';
       detailsInstallBtn.setAttribute('data-action','cancel-install');
-      detailsInstallBtn.setAttribute('aria-label', t('install.cancel') || 'Annuler installation en cours ('+app.name+')');
+      detailsInstallBtn.setAttribute('aria-label', t('install.cancel') || 'Cancel installation in progress ('+app.name+')');
     } else {
       detailsInstallBtn.textContent = t('details.install');
       detailsInstallBtn.setAttribute('data-action','install');
@@ -2385,7 +2390,7 @@ function showDetails(appName) {
     }
     refreshAllInstallButtons();
   }
-  // Restaurer panneau streaming si une installation en cours correspond à cette app
+  // Restore streaming panel if an ongoing install matches this app
   if (installStream) {
     if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === app.name) {
       installStream.hidden = false;
@@ -2404,10 +2409,10 @@ function showDetails(appName) {
     detailsUninstallBtn.setAttribute('data-name', app.name);
   }
   if (appDetailsSection) appDetailsSection.hidden = false;
-  // Masquer la barre d'onglets catégories et le bouton miroir/tout
+  // Hide categories tab bar and mirror/all button
   const tabsRowSecondary = document.querySelector('.tabs-row-secondary');
   if (tabsRowSecondary) tabsRowSecondary.style.visibility = 'hidden';
-  // Suppression de la barre : rien à faire
+  // Bar removal: nothing to do
   document.body.classList.add('details-mode');
   // hide featured banner when entering details
   const featuredBannerEl = document.getElementById('featuredBanner');
@@ -2435,15 +2440,15 @@ function exitDetailsView() {
   if (virtualListApi?.renderVirtualList) {
     try { virtualListApi.renderVirtualList(); } catch (_) {}
   }
-  // Réaffiche la barre d'onglets catégories et le bouton miroir/tout
+  // Re-show categories tab bar and mirror/all button
   const tabsRowSecondary = document.querySelector('.tabs-row-secondary');
   if (tabsRowSecondary) tabsRowSecondary.style.visibility = 'visible';
   rerenderActiveCategory();
-  // Nettoyer tous les états busy/spinner sur les tuiles
+  // Clear all busy/spinner states on tiles
   document.querySelectorAll('.app-tile.busy').forEach(t => t.classList.remove('busy'));
   // Restaurer scroll
   if (scrollShell) scrollShell.scrollTop = state.lastScrollY || 0;
-  // Mémoriser dernier détail pour potentielle restauration
+  // Remember last detail for potential restoration
   if (state.currentDetailsApp) sessionStorage.setItem('lastDetailsApp', state.currentDetailsApp);
 }
 
@@ -2527,14 +2532,14 @@ appsDiv?.addEventListener('click', (e) => {
       }).then(ok => {
         if (!ok) return;
         actionBtn.disabled = true;
-        actionBtn.classList.add('loading'); // Ajoute le spinner sur le bouton désinstaller
+        actionBtn.classList.add('loading'); // Add spinner on uninstall button
         const tile = actionBtn.closest('.app-tile');
         if (tile){ tile.classList.add('busy'); }
         showToast(t('toast.uninstalling', {name: appName}));
         window.electronAPI.amAction('uninstall', appName).then(() => {
           loadApps().then(()=> {
             applySearch();
-            actionBtn.classList.remove('loading'); // Retire le spinner après désinstallation
+            actionBtn.classList.remove('loading'); // Remove spinner after uninstall
           });
         });
       });
@@ -2551,25 +2556,25 @@ appsDiv?.addEventListener('click', (e) => {
   if (tile) showDetails(tile.getAttribute('data-app'));
 });
 
-// Debounce recherche pour éviter re-rendus superflus
+// Search debounce to avoid unnecessary re-renders
 
 
-// Unification des raccourcis clavier
+// Unified keyboard shortcuts
 window.addEventListener('keydown', (e) => {
-  // Rafraîchissement clavier: Ctrl+R ou F5
+  // Keyboard refresh: Ctrl+R or F5
   if ((e.key === 'r' && (e.ctrlKey || e.metaKey)) || e.key === 'F5') {
     e.preventDefault();
     triggerRefresh();
     return;
   }
-  // Toggle paramètres Ctrl+,
+  // Toggle settings Ctrl+,
   if ((e.ctrlKey || e.metaKey) && e.key === ',') {
     e.preventDefault();
     if (settingsPanelApi?.toggle) settingsPanelApi.toggle();
     else settingsBtn?.click();
     return;
   }
-  // Escape: fermer détails ou lightbox / menu modes / paramètres
+  // Escape: close details or lightbox / modes menu / settings
   if (e.key === 'Escape') {
     if (lightbox && !lightbox.hidden) { closeLightbox(); return; }
     if (document.body.classList.contains('details-mode')) { exitDetailsView(); return; }
@@ -2587,29 +2592,29 @@ window.addEventListener('keydown', (e) => {
 
 (async () => {
   await loadApps();
-  // Assurer spinner et résultats cachés au démarrage
+  // Ensure spinner and results are hidden at startup
   setUpdateSpinnerBusy(false);
   if (updateResult) updateResult.style.display = 'none';
-  // Forcer la vue liste au démarrage
+  // Force list view at startup
   if (appDetailsSection) appDetailsSection.hidden = true;
   document.body.classList.remove('details-mode');
   if (appsDiv) appsDiv.hidden = false;
-  // Restaurer éventuel détail précédent (session) si encore présent
+  // Restore any previous detail (session) if still present
   const last = sessionStorage.getItem('lastDetailsApp');
   if (last && state.allApps.find(a=>a.name===last)) {
     showDetails(last);
   }
 
-  // Gestion du prompt de choix interactif pendant installation
+  // Handle interactive choice prompt during installation
   window.electronAPI?.onInstallProgress?.((data) => {
-    // Initialiser la session d'installation à la réception de 'start'
+    // Initialize install session on receiving 'start'
     if (data.kind === 'start' && data.id) {
       activeInstallSession.id = data.id;
     }
     if (data.kind === 'choice-prompt') {
-      // Supprimer toute boîte de dialogue de choix existante
+      // Remove any existing choice dialog
       document.querySelectorAll('.choice-dialog').forEach(e => e.remove());
-      // Créer un dialogue simple
+      // Create a simple dialog
       const dlg = document.createElement('div');
       dlg.className = 'choice-dialog';
       const cardColor = getThemeVar('--card', '#ffffff');
@@ -2629,7 +2634,7 @@ window.addEventListener('keydown', (e) => {
       dlg.style.minWidth = '320px';
       let optionsHtml;
       if (data.options.length > 8) {
-        // Affichage en tableau 2 colonnes
+        // Display as 2-column table
         const colCount = 2;
         const rowCount = Math.ceil(data.options.length / colCount);
         optionsHtml = '<table class="multi-choice-table"><tbody>';
@@ -2647,10 +2652,10 @@ window.addEventListener('keydown', (e) => {
         }
         optionsHtml += '</tbody></table>';
       } else {
-        // Affichage classique en liste
+        // Classic list display
         optionsHtml = `<ul>${data.options.map((opt,i)=>`<li><button class="multi-choice-item" data-choice="${i+1}">${opt}</button></li>`).join('')}</ul>`;
       }
-      const cancelLabel = t('install.cancel') || 'Annuler';
+      const cancelLabel = t('install.cancel') || 'Cancel';
       const cleanPrompt = stripAnsiSequences(data.prompt || '');
       dlg.innerHTML = `
         <div class="choice-dialog-inner">
@@ -2670,29 +2675,29 @@ window.addEventListener('keydown', (e) => {
       dlg.querySelectorAll('button[data-choice]').forEach(btn => {
         btn.addEventListener('click', async () => {
           const choice = btn.getAttribute('data-choice');
-          // Fermer la boîte de dialogue immédiatement
+          // Close the dialog immediately
           dlg.remove();
           // Envoi du choix au backend
           const installId = data.id;
           if (!installId) {
-            window.showCopiableError('Erreur : identifiant d’installation manquant.');
+            window.showCopiableError(t('error.global', { msg: 'Missing install ID' }));
             return;
           }
           try {
             await window.electronAPI.installSendChoice(installId, choice);
           } catch(e) {
-            window.showCopiableError('Erreur lors de l’envoi du choix : ' + (e?.message || e));
+            window.showCopiableError(t('error.global', { msg: 'Send choice: ' + (e?.message || e) }));
           }
         });
       });
     }
-    // Fermer le prompt si l'installation est terminée ou annulée
+    // Close the prompt if the install is finished or cancelled
     if (data.kind === 'done' || data.kind === 'cancelled' || data.kind === 'error') {
       document.querySelectorAll('.choice-dialog').forEach(e => e.remove());
     }
   });
 
-// Fonction utilitaire globale pour afficher une erreur copiable
+// Global utility function to display a copyable error
 window.showCopiableError = function(msg) {
   const errDlg = document.createElement('div');
   const cardColor = getThemeVar('--card', '#ffffff');
@@ -2710,7 +2715,7 @@ window.showCopiableError = function(msg) {
   errDlg.style.borderRadius = '10px';
   errDlg.style.padding = '24px 32px';
   errDlg.style.minWidth = '320px';
-  errDlg.innerHTML = `<div style="margin-bottom:12px;font-weight:bold;">Erreur</div><textarea style="width:100%;height:80px;resize:none;user-select:text;">${msg}</textarea><div style="text-align:right;margin-top:12px;"><button>Fermer</button></div>`;
+  errDlg.innerHTML = `<div style="margin-bottom:12px;font-weight:bold;">${t("error.dialogTitle")}</div><textarea style="width:100%;height:80px;resize:none;user-select:text;">${msg}</textarea><div style="text-align:right;margin-top:12px;"><button>${t("error.dialogClose")}</button></div>`;
   document.body.appendChild(errDlg);
   errDlg.querySelector('button').onclick = () => errDlg.remove();
   const ta = errDlg.querySelector('textarea');
@@ -2764,22 +2769,22 @@ tabs.forEach(tab => {
         setUpdateSpinnerBusy(false);
       }
     } else {
-      // Conserver l'état du spinner si une mise à jour tourne encore
+      // Keep spinner state if an update is still running
       setUpdateSpinnerBusy(updateInProgress);
     }
-    // Pas de terminal dans le mode avancé désormais
+    // No terminal in advanced mode now
     if (document.body.classList.contains('details-mode')) {
       exitDetailsView();
     }
   });
 });
 
-// (Terminal intégré supprimé)
+// (Integrated terminal removed)
 
 // Sortie avec ESC
-// (Ancien handler Escape détails fusionné ci-dessus)
+// (Old Escape details handler merged above)
 
-// Bouton Mettre à jour: terminal intégré + flux streaming
+// Update button: integrated terminal + streaming
 function hasUpdatesStreamingSupport() {
   return !!(window.electronAPI?.startUpdates && window.electronAPI?.onUpdatesProgress);
 }
@@ -2816,7 +2821,7 @@ function setUpdateSpinnerBusy(isBusy) {
 function startUpdateTimer() {
   const timer = document.querySelector('.update-timer');
   if (!timer) return;
-  // Ne pas réinitialiser si déjà en cours
+  // Don't reset if already in progress
   if (updateTimerStart === null) updateTimerStart = Date.now();
   if (updateTimerInterval) return;
   const updateTimerText = () => {
@@ -2844,7 +2849,7 @@ function updateUpdatesToggleUi() {
   updatesToggleBtn.setAttribute('aria-expanded', updatesTerminalExpanded ? 'true' : 'false');
   const section = document.getElementById('updatesLogSection');
   if (section) section.setAttribute('data-open', updatesTerminalExpanded ? 'true' : 'false');
-  // Mettre à jour la flèche
+  // Update the arrow
   const caret = updatesToggleBtn.querySelector('.updates-log-caret');
   if (caret) caret.textContent = updatesTerminalExpanded ? '▾' : '▸';
 }
@@ -2996,7 +3001,7 @@ window.electronAPI?.onUpdatesProgress?.((msg) => {
   switch (msg.kind) {
     case 'start':
       activeUpdateStreamId = msg.id;
-      updatesStreamBuffer = ''; // Reset le buffer au début
+      updatesStreamBuffer = ''; // Reset buffer at start
       revealUpdatesTerminal();
       resetUpdatesTerminal();
       appendUpdatesTerminalChunk(`\x1b[36m${t('updates.logHeader') || 'am -u'}\x1b[0m\r\n`);
@@ -3008,8 +3013,8 @@ window.electronAPI?.onUpdatesProgress?.((msg) => {
       }
       break;
     case 'done':
-      appendUpdatesTerminalChunk(`\r\n\x1b[32m${t('updates.logCompleted') || 'Terminé'} (code ${typeof msg.code === 'number' ? msg.code : 0})\x1b[0m\r\n`);
-      // Passe la sortie accumulée dans le message résolu
+      appendUpdatesTerminalChunk(`\r\n\x1b[32m${t('updates.logCompleted') || 'Completed'} (code ${typeof msg.code === 'number' ? msg.code : 0})\x1b[0m\r\n`);
+      // Pass the accumulated output into the resolved message
       resolveUpdateWaiter({ ...msg, output: updatesStreamBuffer }, false);
       activeUpdateStreamId = null;
       break;
@@ -3021,7 +3026,7 @@ window.electronAPI?.onUpdatesProgress?.((msg) => {
   }
 });
 
-// Bouton Mettre à jour: analyse du log
+// Update button: log analysis
 function stripAnsiSequences(text = '') {
   return text
     .replace(/\x1B\[[0-9;?]*[ -\/]*[@-~]/g, '')
@@ -3031,7 +3036,7 @@ function stripAnsiSequences(text = '') {
 }
 
 function parseUpdatedApps(res){
-  // Motifs purement structurels (indépendants de la langue)
+  // Purely structural patterns (language-independent)
   const cleanedOutput = stripAnsiSequences(res || '');
   const updated = new Set();
   if (typeof cleanedOutput !== 'string') return updated;
@@ -3039,7 +3044,7 @@ function parseUpdatedApps(res){
   for (const raw of lines){
     const line = raw.trim();
     if (!line) continue;
-    // Motifs structurels uniquement (symboles / flèches, pas de texte anglais):
+    // Structural patterns only (symbols / arrows, no English text):
     // ✔ appname
     // * appname -> version
     // appname (old -> new)
@@ -3058,25 +3063,25 @@ function parseUpdatedApps(res){
 /**
  * Parse the updated apps table from AM/appman output (new table format).
  *
- * appman affiche toujours 4 séparateurs dans cet ordre :
+ * appman always shows 4 separators in this order:
  *   sep1 → >> START OF ALL PROCESSES <<
- *   sep2 → CAN MANAGE... (en-tête)
- *   sep3 ◆ liste initiale de tout ce qui peut être mis à jour  ← À IGNORER
- *   sep4 → résultat : tableau des apps mises à jour  OU  texte "rien à faire"
- *   (sep5+ possibles si d'autres sections sont ajoutées après)
+ *   sep2 → CAN MANAGE... (header)
+ *   sep3 ◆ initial list of everything that can be updated  ← IGNORE
+ *   sep4 → result: table of updated apps  OR  "nothing to do" text
+ *   (sep5+ possible if more sections are added after)
  *
- * Le tableau AM a la forme suivante (en-têtes localisées, couleurs ANSI supprimées) :
+ * The AM table looks like this (localized headers, ANSI colors removed):
  *        App      Previous    Current
  *
  *     1.  appname  oldver      newver
  *     2.  appname2 oldver2     newver2
  *
- * Stratégie : après le 4ème séparateur, chercher des lignes numérotées et extraire
- * nom + ancienne + nouvelle version. Indépendant de la langue de l'en-tête.
+ * Strategy: after the 4th separator, look for numbered lines and extract
+ * name + old + new version. Independent of the header language.
  *
- * Retourne { updated: Set, newVersions: Map, hasStructure: bool }
- *   hasStructure=true  → au moins 4 séparateurs trouvés
- *   hasStructure=false → structure inconnue (fallback autorisé)
+ * Returns { updated: Set, newVersions: Map, hasStructure: bool }
+ *   hasStructure=true  → at least 4 separators found
+ *   hasStructure=false → unknown structure (fallback allowed)
  */
 function parseUpdatedBlock(text) {
   const updated = new Set();
@@ -3111,9 +3116,9 @@ function parseUpdatedBlock(text) {
 
 function handleUpdateCompletion(fullText){
   const sanitized = stripAnsiSequences(fullText || '');
-  // Parser structurel (indépendant de la langue) — inspiré de l'approche awk
+  // Structural parser (language-independent) — inspired by awk approach
   const { updated: blockUpdated, newVersions, hasStructure } = parseUpdatedBlock(sanitized);
-  // Enrichir newVersions avec les lignes "appname (old -> new)" (structurel, pas de langue)
+  // Enrich newVersions with "appname (old -> new)" lines (structural, no language)
   const lines = sanitized.split(/\r?\n/);
   for (const raw of lines) {
     const line = raw.trim();
@@ -3126,14 +3131,14 @@ function handleUpdateCompletion(fullText){
   }
   let toShow = new Set();
   if (blockUpdated.size > 0) {
-    // Apps trouvées dans le tableau après le dernier séparateur → résultat fiable
+    // Apps found in the table after the last separator -> reliable result
     toShow = blockUpdated;
   } else if (!hasStructure) {
-    // Pas de séparateur détecté (sortie inconnue) → fallback structurel (✔, *, ->)
+    // No separator found (unknown output) → structural fallback (✔, *, ->)
     const fallback = parseUpdatedApps(sanitized);
     if (fallback.size > 0) toShow = fallback;
   }
-  // Si hasStructure && blockUpdated.size === 0 : tableau vide = rien mis à jour
+  // If hasStructure && blockUpdated.size === 0 : empty table = nothing updated
   if (toShow.size > 0) {
     if (updateFinalMessage) updateFinalMessage.textContent = t('updates.updatedApps');
     if (updatedAppsIcons) {
@@ -3167,18 +3172,18 @@ function handleUpdateCompletion(fullText){
       });
     }
   } else {
-    // 0 apps à afficher
+    // 0 apps to display
     if (hasStructure) {
-      // Structure détectée mais tableau vide → vraiment rien mis à jour
+      // Structure detected but empty table -> really nothing updated
       if (updateFinalMessage) updateFinalMessage.textContent = t('updates.none');
     } else {
-      // Pas de structure connue → on ne sait pas, on affiche "terminé"
+      // No known structure -> we don't know, show "done"
       if (updateFinalMessage) updateFinalMessage.textContent = t('updates.done');
     }
     if (updatedAppsIcons) updatedAppsIcons.innerHTML = '';
   }
   if (updateResult) updateResult.style.display = 'block';
-  // Rafraîchir la liste complète pour mettre à jour les versions installées
+  // Refresh the full list to update installed versions
   setTimeout(() => { loadApps().then(applySearch); }, 400);
 }
 
@@ -3241,13 +3246,13 @@ runUpdatesBtn?.addEventListener('click', async () => {
     handleUpdateCompletion(raw);
     const dur = Math.round((performance.now()-start)/1000);
     if (updateFinalMessage && updateFinalMessage.textContent) updateFinalMessage.textContent += t('updates.duration', {dur});
-    // Arrêter le spinner dès que le résultat est prêt, avant le refresh lourd
+    // Stop the spinner as soon as the result is ready, before the heavy refresh
     setUpdateSpinnerBusy(false);
     await refreshAfterUpdates();
   } catch (err) {
     console.error('Updates failed', err);
-    showToast(t('toast.updateFailed') || 'Échec des mises à jour');
-    if (updateFinalMessage) updateFinalMessage.textContent = t('updates.error') || 'Erreur pendant la mise à jour.';
+    showToast(t('toast.updateFailed') || t('error.global', { msg: 'Update failed' }));
+    if (updateFinalMessage) updateFinalMessage.textContent = t('updates.error') || t('error.global', { msg: 'Error during update' });
     if (updateResult) updateResult.style.display = 'block';
   } finally {
     updateInProgress = false;
@@ -3258,7 +3263,7 @@ runUpdatesBtn?.addEventListener('click', async () => {
 
 // ...existing code...
 async function loadRemoteDescription(appName) {
-  // Si dans le cache (<24h) on réutilise
+  // If in cache (<24h) we reuse
   const cached = descriptionCache.get(appName);
   if (cached && (Date.now() - cached.timestamp) < 24*3600*1000) {
     applyDescription(appName, cached);
@@ -3278,13 +3283,13 @@ async function loadRemoteDescription(appName) {
   let longDesc = '';
   try {
   if (!window.marked) throw new Error('marked non chargé');
-  // Couper le markdown à la première ligne de tableau (| ...)
+  // Cut markdown at the first table line (| ...)
   let md = markdown;
   const lines = md.split(/\r?\n/);
   const tableIdx = lines.findIndex(l => /^\s*\|/.test(l));
   if (tableIdx !== -1) md = lines.slice(0, tableIdx).join('\n');
   longDesc = window.marked.parse(md);
-  // Pour le shortDesc, on prend la première ligne non vide (hors titre)
+  // For shortDesc, take the first non-empty line (excluding title)
   const descLines = md.split(/\r?\n/).map(l => l.trim()).filter(l => l && !l.startsWith('#'));
   shortDesc = descLines[0] || 'Description non fournie.';
   } catch (_err) {
@@ -3296,7 +3301,7 @@ async function loadRemoteDescription(appName) {
     const parser2 = new DOMParser();
     const doc2 = parser2.parseFromString(html, 'text/html');
     const imgEls = Array.from(doc2.querySelectorAll('img'));
-    // Filtrage: éviter icônes trop petites ou décoratives
+    // Filter: avoid icons that are too small or decorative
     const filtered = imgEls.filter(img => {
       const src = img.getAttribute('src') || '';
       if (!src) return false;
@@ -3314,7 +3319,7 @@ async function loadRemoteDescription(appName) {
       // Assumer relatif au dossier /apps/
       return `https://portable-linux-apps.github.io/apps/${u.replace(/^\.\//,'')}`;
     });
-    // Dédup + limite
+    // Dedup + limit
     const seen = new Set();
     const finalImgs = [];
     for (const u of images) { if (!seen.has(u)) { seen.add(u); finalImgs.push(u); } }
@@ -3343,8 +3348,8 @@ function applyDescription(appName, record) {
       });
       detailsGallery.hidden = false;
     } else { detailsGallery.hidden = true; }
-  // Galerie supprimée : toutes les images sont dans la description Markdown
-// Lightbox supprimé
+  // Gallery removed: all images are in the description Markdown
+// Lightbox removed
   }
 }
 
@@ -3355,7 +3360,7 @@ function openLightbox(images, index, captionBase) {
   lightboxState.originApp = captionBase;
   applyLightboxImage();
   lightbox.hidden = false;
-  // Focus sur close pour accessibilité
+  // Focus on close for accessibility
   if (lightboxClose) setTimeout(()=> lightboxClose.focus(), 30);
 }
 
@@ -3389,11 +3394,11 @@ lightboxNext?.addEventListener('click', () => {
 lightboxClose?.addEventListener('click', () => closeLightbox());
 lightbox?.addEventListener('click', (e) => {
   if (e.target === lightbox) closeLightbox();
-// Lightbox supprimé : plus de galerie séparée
+// Lightbox removed: no separate gallery
 });
 
 
-// --- Streaming installation (Étapes 1 & 2) ---
+// --- Streaming installation (Steps 1 & 2) ---
 
 
 let currentInstallId = null;
@@ -3423,7 +3428,7 @@ function startStreamingInstall(name){
   currentInstallStart = Date.now();
   currentInstallLines = 0;
   activeInstallSession = { id: null, name, start: currentInstallStart, lines: [], done: false, success: null, code: null };
-  // Démarrer le vrai chronomètre temps réel
+  // Start the real-time timer
   if (installElapsedInterval) clearInterval(installElapsedInterval);
   installElapsedInterval = setInterval(() => {
     if (installStreamElapsed) {
@@ -3441,7 +3446,7 @@ function startStreamingInstall(name){
     }
     currentInstallId = res?.id || null;
     activeInstallSession.id = currentInstallId;
-    // Rafraîchir les boutons maintenant que l'ID est connu
+    // Refresh buttons now that the ID is known
     refreshAllInstallButtons();
   });
 }
@@ -3449,26 +3454,26 @@ function startStreamingInstall(name){
 if (window.electronAPI.onInstallProgress){
   window.electronAPI.onInstallProgress(msg => {
     if (!msg) return;
-    if (currentInstallId && msg.id !== currentInstallId) return; // ignorer autres installations (future multi support)
+    if (currentInstallId && msg.id !== currentInstallId) return; // ignore other installs (future multi support)
     if (msg.kind === 'line') {
       // --- Extraction du pourcentage de progression depuis le flux ---
       if (msg.raw !== undefined) {
-        // Nettoyage robuste de toutes les séquences d'échappement ANSI/OSC (couleurs, curseur, ESC 7/8, etc.)
+        // Robust cleanup of all ANSI/OSC escape sequences (colors, cursor, ESC 7/8, etc.)
         const ansiCleaned = msg.raw
-          // Séquences ESC [ ... (CSI)
+          // ESC [ ... sequences (CSI)
           .replace(/\x1B\[[0-9;?]*[ -/]*[@-~]/g, '')
-          // Séquences ESC ... (OSC, ESC 7, ESC 8, etc.)
+          // ESC ... sequences (OSC, ESC 7, ESC 8, etc.)
           .replace(/\x1B[][A-Za-z0-9#()*+\-.\/]*|\x1B[7-8]/g, '')
-          // Séquences OSC (Operating System Command)
+          // OSC sequences (Operating System Command)
           .replace(/\x1B\][^\x07]*(\x07|\x1B\\)/g, '')
-          // Autres caractères de contrôle
+          // Other control characters
           .replace(/[\x07\x08\x0D\x0A\x1B]/g, '');
 
-        // --- Détection et accumulation du bloc warning ---
+        // --- Warning block detection and accumulation ---
         if (!window._installWarningBuffer) window._installWarningBuffer = null;
         if (!window._installWarningActive) window._installWarningActive = false;
 
-        // Début du bloc warning
+        // Warning block start
         if (/^\s*WARNING:/i.test(ansiCleaned)) {
           window._installWarningBuffer = ansiCleaned + '\n';
           window._installWarningActive = true;
@@ -3486,7 +3491,7 @@ if (window.electronAPI.onInstallProgress){
           return;
         }
 
-        // Cherche un motif du type "   6%[>" ou " 99%[" ou "100%[" (tolère espaces avant)
+        // Look for patterns like "   6%[>" or " 99%[" or "100%[" (allows leading spaces)
         const percentMatch = ansiCleaned.match(/\s(\d{1,3})%\s*\[/);
         if (percentMatch) {
           let percent = parseInt(percentMatch[1], 10);
@@ -3501,7 +3506,7 @@ if (window.electronAPI.onInstallProgress){
         if (m) eta = m[1].trim();
         if (installProgressEtaLabel) installProgressEtaLabel.textContent = eta ? `⏳ ${eta}` : '';
       }
-      // (Le temps écoulé est maintenant géré par le chronomètre JS)
+      // (Elapsed time is now handled by the JS timer)
       return;
     }
     switch(msg.kind){
@@ -3519,7 +3524,7 @@ if (window.electronAPI.onInstallProgress){
         if (installElapsedInterval) { clearInterval(installElapsedInterval); installElapsedInterval = null; }
         break;
       case 'cancelled':
-        if (installStreamStatus) installStreamStatus.textContent = t('install.cancelled') || 'Annulée';
+        if (installStreamStatus) installStreamStatus.textContent = t('install.cancelled') || 'Cancelled';
         if (detailsInstallBtn) {
           detailsInstallBtn.classList.remove('loading');
           detailsInstallBtn.disabled = false;
@@ -3527,14 +3532,14 @@ if (window.electronAPI.onInstallProgress){
         if (installProgressBar) installProgressBar.value = 0;
         if (installElapsedInterval) { clearInterval(installElapsedInterval); installElapsedInterval = null; }
         setTimeout(()=> { if (installStream) installStream.hidden = true; }, 2000);
-        // (Correction annulée : on ne rafraîchit plus la liste ni les détails ici)
+        // (Fix reverted: no longer refresh list or details here)
         break;
       case 'done':
-        if (installStreamStatus) installStreamStatus.textContent = t('install.done') || 'Terminé';
+        if (installStreamStatus) installStreamStatus.textContent = t('install.done') || 'Done';
         if (installProgressBar) installProgressBar.value = 100;
         if (installElapsedInterval) { clearInterval(installElapsedInterval); installElapsedInterval = null; }
         setTimeout(()=> { if (installStream) installStream.hidden = true; }, 2000);
-        // --- Suite logique d'après l'ancien code (fusionner les deux 'done') ---
+        // --- Logical continuation from old code (merge the two 'done' handlers) ---
         detailsInstallBtn?.classList.remove('loading');
         detailsInstallBtn?.removeAttribute('disabled');
         if (activeInstallSession && activeInstallSession.id === currentInstallId) {
@@ -3542,7 +3547,7 @@ if (window.electronAPI.onInstallProgress){
           activeInstallSession.success = msg.success;
           activeInstallSession.code = msg.code;
         }
-        // Plus de gestion du log ou du bouton log ici
+        // No more log or log button handling here
         loadApps().then(()=> {
           if (msg.success) {
             // Redirect to the surviving app after install:
@@ -3601,7 +3606,7 @@ function showPopupWarning(msg) {
   }
 }
 
-// Gestion de la confirmation de fermeture avec installation en cours
+// Handle close confirmation with ongoing installation
 const closeConfirmModal = document.getElementById('closeConfirmModal');
 const closeConfirmStay = document.getElementById('closeConfirmStay');
 const closeConfirmQuit = document.getElementById('closeConfirmQuit');
@@ -3609,7 +3614,7 @@ const closeConfirmQuit = document.getElementById('closeConfirmQuit');
 function showCloseConfirm() {
   if (!closeConfirmModal) return;
   closeConfirmModal.hidden = false;
-  applyTranslations(); // Mettre à jour les textes traduits
+  applyTranslations(); // Update translated texts
   if (closeConfirmQuit) closeConfirmQuit.focus();
 }
 
@@ -3624,7 +3629,7 @@ closeConfirmStay?.addEventListener('click', () => {
 
 closeConfirmQuit?.addEventListener('click', async () => {
   hideCloseConfirm();
-  // Annuler l'installation en cours
+  // Cancel the ongoing installation
   if (activeInstallSession && !activeInstallSession.done) {
     try {
       await cancelActiveInstall();
@@ -3638,10 +3643,10 @@ closeConfirmQuit?.addEventListener('click', async () => {
   }
 });
 
-// Intercepter la tentative de fermeture
+// Intercept close attempt
 if (window.electronAPI?.onBeforeClose) {
   window.electronAPI.onBeforeClose(() => {
-    // Vérifier si une installation est en cours
+    // Check if an installation is in progress
     if (activeInstallSession && activeInstallSession.id && !activeInstallSession.done) {
       showCloseConfirm();
     }

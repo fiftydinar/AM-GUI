@@ -93,19 +93,24 @@
         if (!response.ok) throw new Error('HTTP ' + response.status);
         markdown = await response.text();
       } catch (error) {
-        throw new Error('Échec fetch: ' + (error.message || error));
+        const tMsg = typeof window.t === 'function' ? window.t('error.fetchFailed', { msg: error.message || error }) : null;
+        throw new Error(tMsg || ('Fetch failed: ' + (error.message || error)));
       }
       let shortDesc = '';
       let longDesc = '';
       try {
-        if (!window.marked) throw new Error('marked non chargé');
+        if (!window.marked) {
+          const tMsg = typeof window.t === 'function' ? window.t('error.markedNotLoaded') : null;
+          throw new Error(tMsg || 'marked not loaded');
+        }
         let md = markdown;
         const lines = md.split(/\r?\n/);
         const tableIdx = lines.findIndex((line) => /^\s*\|/.test(line));
         if (tableIdx !== -1) md = lines.slice(0, tableIdx).join('\n');
         longDesc = window.marked.parse(md);
         const descLines = md.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
-        shortDesc = descLines[0] || 'Description non fournie.';
+        const noDesc = typeof window.t === 'function' ? window.t('details.noDescription') : null;
+        shortDesc = descLines[0] || noDesc || 'No description provided.';
       } catch (_) {
         shortDesc = 'Description indisponible.';
         longDesc = 'Impossible de parser le markdown.';
