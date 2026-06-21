@@ -314,8 +314,6 @@ function initXtermLog() {
   if (!xtermLogDiv) return;
   if (!xterm) {
     try {
-      const { Terminal } = require('@xterm/xterm');
-      const { FitAddon } = require('@xterm/addon-fit');
       xterm = new Terminal({
         fontSize: 13,
         fontFamily: 'monospace',
@@ -325,7 +323,7 @@ function initXtermLog() {
         disableStdin: true,
         cursorBlink: false
       });
-      xtermFit = new FitAddon();
+      xtermFit = new FitAddonClass();
       xterm.loadAddon(xtermFit);
       xterm.open(xtermLogDiv);
       window.addEventListener('resize', ()=>xtermFit.fit());
@@ -2884,8 +2882,6 @@ function ensureUpdatesTerminal() {
   if (!updatesTerminalEl) return null;
   if (updatesXterm) return updatesXterm;
   try {
-    const { Terminal } = require('@xterm/xterm');
-    const { FitAddon } = require('@xterm/addon-fit');
     updatesXterm = new Terminal({
       fontSize: 12,
       fontFamily: 'JetBrains Mono, SFMono-Regular, Menlo, Consolas, monospace',
@@ -2895,7 +2891,7 @@ function ensureUpdatesTerminal() {
       scrollback: 2000,
       disableStdin: true
     });
-    updatesXtermFit = new FitAddon();
+    updatesXtermFit = new FitAddonClass();
     updatesXterm.loadAddon(updatesXtermFit);
     updatesXterm.open(updatesTerminalEl);
     setTimeout(() => updatesXtermFit?.fit(), 60);
