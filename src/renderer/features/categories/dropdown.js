@@ -122,6 +122,7 @@
       categoriesDropdownBtn.setAttribute('aria-expanded', 'false');
       categoriesDropdownBtn.classList.remove('active');
       if (categoriesDropdownOverlay) categoriesDropdownOverlay.hidden = true;
+      if (categoryBackBtn) categoryBackBtn.hidden = true;
     }
 
     function openCategoriesDropdown() {
@@ -142,18 +143,30 @@
     }
 
     document.addEventListener('click', (event) => {
-      if (!categoriesDropdownMenu.hidden && !categoriesDropdownMenu.contains(event.target) && event.target !== categoriesDropdownBtn) {
+      if (!categoriesDropdownMenu.hidden && !categoriesDropdownMenu.contains(event.target) && event.target !== categoriesDropdownBtn && !event.target.closest('.category-back-btn')) {
         closeCategoriesDropdown();
       }
     });
 
-    document.querySelectorAll('.tab[data-category]').forEach(tab => {
-      tab.addEventListener('click', () => {
-        closeCategoriesDropdown();
-      });
-    });
-
     cacheApi.load({ showToast });
+
+    const categoryBackBtn = document.getElementById('categoryBackBtn');
+    if (categoryBackBtn) {
+      categoryBackBtn.textContent = translate('details.back');
+      categoryBackBtn.addEventListener('click', (e) => {
+        e.stopPropagation();
+        closeCategoriesDropdown();
+        clearCategoryOverride();
+        state.activeCategory = 'all';
+        updateLabel();
+        const tabAll = document.querySelector('.tab[data-category="all"]');
+        if (tabAll) tabAll.click();
+        else {
+          resetToAppsView();
+          setAppList(state.allApps || []);
+        }
+      });
+    }
 
     const tabSecondary = document.querySelector('.tab-secondary');
     if (tabSecondary) {
@@ -165,6 +178,7 @@
         if (appsDiv) appsDiv.hidden = false;
         state.currentDetailsApp = null;
         categoriesDropdownMenu.innerHTML = '';
+        if (categoryBackBtn) categoryBackBtn.hidden = false;
         const categories = await cacheApi.load({ showToast });
         categories.forEach(({ name, apps }) => {
           const btn = createCategoryButton(name, () => {
@@ -188,7 +202,8 @@
           }, iconMap);
           categoriesDropdownMenu.appendChild(btn);
         });
-        const btnOther = createCategoryButton('Autre', () => {}, iconMap);
+        const btnOther = createCategoryButton('autre', () => {}, iconMap);
+        btnOther.querySelector('span:last-child').textContent = translate('categories.other');
         btnOther.disabled = true;
         btnOther.innerHTML += ' <span class="cat-spinner" style="margin-left:8px;font-size:0.9em;">⏳</span>';
         categoriesDropdownMenu.appendChild(btnOther);
