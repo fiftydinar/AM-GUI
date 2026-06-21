@@ -1026,20 +1026,24 @@ ipcMain.handle('list-apps-detailed', async () => {
       }
 
       const allSet = new Set([...catalogSet, ...installedSet]);
-      const all = Array.from(allSet).map(name => ({
-        name,
-        installed: installedSet.has(name),
-        hasDiamond: diamondSet.has(name),
-        version: installedDesc.get(name) || null,
-        desc: catalogDesc.get(name) || null
-      }));
-      const installed = Array.from(installedSet).map(name => ({
-        name,
-        installed: true,
-        hasDiamond: diamondSet.has(name),
-        version: installedDesc.get(name) || null,
-        desc: catalogDesc.get(name) || null
-      }));
+      const all = Array.from(allSet)
+        .filter(name => name.toLowerCase() !== 'am')
+        .map(name => ({
+          name,
+          installed: installedSet.has(name),
+          hasDiamond: diamondSet.has(name),
+          version: installedDesc.get(name) || null,
+          desc: catalogDesc.get(name) || null
+        }));
+      const installed = Array.from(installedSet)
+        .filter(name => name.toLowerCase() !== 'am')
+        .map(name => ({
+          name,
+          installed: true,
+          hasDiamond: diamondSet.has(name),
+          version: installedDesc.get(name) || null,
+          desc: catalogDesc.get(name) || null
+        }));
       return resolve({ installed, all, pmFound: true, bundleChildOf });
     } catch (e) {
       return resolve({ installed: [], all: [], pmFound: true, error: tErr('errInternalParsing', 'Internal parsing error.') });
@@ -1162,6 +1166,3 @@ ipcMain.handle('set-tray-locale', (_event, locale) => {
   if (locale && locale !== 'auto') currentLocale = locale;
   setLocale(locale);
 });
-
-
-
