@@ -3098,7 +3098,7 @@ function parseUpdatedBlock(text) {
 
   // Parse the table structurally: find numbered rows (locale-independent)
   for (let i = 0; i < blockLines.length; i++) {
-    const m = blockLines[i].match(/^\s*\d+\.\s+([A-Za-z0-9._-]+)\s+(\S+)\s+(\S+)/);
+    const m = blockLines[i].match(/^\s*\d+\.\s+([A-Za-z0-9._-]+)\s+(\S+)(?:\s+\((?:AppMan|AM)\))?\s+(\S+)(?:\s+\((?:AppMan|AM)\))?/);
     if (m) {
       const name = m[1].toLowerCase();
       if (!name.endsWith('.am')) {
