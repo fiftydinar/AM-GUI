@@ -153,13 +153,13 @@
           stateBadge = ' <span class="install-state-badge installing" data-state="installing">Installation…<button class="queue-remove-badge inline-action" data-action="cancel-install" data-app="'+name+'" title="Annuler" aria-label="Annuler">✕</button></span>';
         } else {
           const pos = getQueuePosition(name);
-          if (pos !== -1) stateBadge = ' <span class="install-state-badge queued" data-state="queued">En file (#'+pos+')<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="Retirer de la file" aria-label="Retirer">✕</button></span>';
+          if (pos !== -1) stateBadge = ' <span class="install-state-badge queued" data-state="queued">En file (#'+pos+')<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="'+t('queue.removeBadge')+'" aria-label="'+t('queue.removeBadgeAria')+'">✕</button></span>';
         }
       }
       const tile = documentRef.createElement('div');
       tile.className = 'app-tile';
       tile.setAttribute('data-app', name);
-      const badgeHTML = installed ? '<span class="installed-badge" aria-label="Installée" title="Installée" style="position:absolute;top:2px;right:2px;">✓</span>' : '';
+      const badgeHTML = installed ? '<span class="installed-badge" aria-label="'+t('installed.badge')+'" title="'+t('installed.badge')+'" style="position:absolute;top:2px;right:2px;">✓</span>' : '';
       tile.innerHTML = `
         <div class="tile-icon" style="position:relative;display:inline-block;">
           <img data-src="${getIconUrl(name)}" alt="${label}" loading="lazy" decoding="async"${state.viewMode==='icons' ? ' class="icon-mode"' : ''}>

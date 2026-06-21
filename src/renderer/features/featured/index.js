@@ -93,9 +93,9 @@
     container.innerHTML = `
       <div class="featured-inner">
         <div class="featured-controls">
-          <button class="featured-prev" aria-label="Previous">◀</button>
+          <button class="featured-prev" aria-label="${t('featured.prev')}">◀</button>
           <div class="featured-slot"></div>
-          <button class="featured-next" aria-label="Next">▶</button>
+          <button class="featured-next" aria-label="${t('featured.next')}">▶</button>
         </div>
         <div class="featured-dots" aria-hidden="true"></div>
       </div>`;

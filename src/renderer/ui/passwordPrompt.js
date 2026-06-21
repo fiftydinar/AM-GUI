@@ -1,6 +1,6 @@
 // js/ui/passwordPrompt.js
 (function(){
-  // Crée une modale de saisie du mot de passe si elle n'existe pas déjà
+  // Create a password input modal if it doesn't already exist
   function t(key) {
     if (window && window.translations) {
       const lang = (window.getLangPref && window.getLangPref()) || (navigator.language || 'en').split('-')[0];
@@ -9,7 +9,7 @@
     return key;
   }
   function ensurePasswordModal() {
-    // Toujours supprimer l'ancienne modale pour forcer la régénération avec la langue courante
+    // Always remove the old modal to force regeneration with the current language
     let old = document.getElementById('passwordPromptModal');
     if (old) old.remove();
     let modal = document.createElement('div');
@@ -35,7 +35,7 @@
     return modal;
   }
 
-  // Affiche la modale et retourne une promesse résolue avec le mot de passe ou null si annulé
+  // Show the modal and return a promise resolved with the password or null if cancelled
   function promptPassword() {
     return new Promise((resolve) => {
       const modal = ensurePasswordModal();

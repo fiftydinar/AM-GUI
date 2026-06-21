@@ -1,9 +1,9 @@
 // js/ui/syncButton.js
-// Module pour le bouton de synchronisation (refresh)
-// Gère le rafraîchissement des apps et des catégories, l'i18n, et l'état du bouton
+// Module for the sync button (refresh)
+// Handles app and category refresh, i18n, and button state
 
 
-// Accès i18n global (window.translations)
+// Access global i18n (window.translations)
 var t = window.t;
 if (!t) {
     t = function(key) {
@@ -20,16 +20,16 @@ function createSyncButton({ onSync }) {
     btn.id = 'syncBtn';
     btn.className = 'btn btn-outline btn-refresh sync-btn';
     btn.type = 'button';
-    // Ajout d'une icône comme dans index.html
+    // Add an icon like in index.html
     btn.innerHTML = '<span class="icon" aria-hidden="true">↻</span>';
-    btn.title = t('refresh.title') || 'Rafraîchir';
-    btn.setAttribute('aria-label', t('refresh.aria') || 'Rafraîchir');
+    btn.title = t('refresh.title') || 'Refresh list';
+    btn.setAttribute('aria-label', t('refresh.aria') || 'Refresh');
 
     // i18n dynamique
     onLanguageChange(() => {
         btn.innerHTML = '<span class="icon" aria-hidden="true">↻</span>';
-        btn.title = t('refresh.title') || 'Rafraîchir';
-        btn.setAttribute('aria-label', t('refresh.aria') || 'Rafraîchir');
+        btn.title = t('refresh.title') || 'Refresh list';
+        btn.setAttribute('aria-label', t('refresh.aria') || 'Refresh');
     });
 
     btn.addEventListener('click', async () => {
@@ -40,7 +40,7 @@ function createSyncButton({ onSync }) {
             if (window.electronAPI && typeof window.electronAPI.resetAppsCache === 'function') {
                 await window.electronAPI.resetAppsCache();
             }
-            // Supprimer le cache local des catégories pour forcer le reload depuis AM
+            // Delete local category cache to force reload from AM
             if (window.electronAPI && typeof window.electronAPI.deleteCategoriesCache === 'function') {
                 await window.electronAPI.deleteCategoriesCache();
             }
