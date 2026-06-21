@@ -639,8 +639,21 @@ ipcMain.handle('install-start', async (event, name) => {
       for (let idx = 0; idx < lines.length; idx++) {
         const line = lines[idx].trim();
         if (!line) continue;
-        // Detect interactive choice prompt (avoid matching concatenated line with the answer)
-        if ((/Choose which version|Which version you choose.*press ENTER|Please choose/i.test(line)) && !/\?\d+$/.test(line)) {
+        // Detect interactive choice prompt: a line ending with ':' or '?'
+        // followed by numbered options (1. ... / 2. ...).
+        // This is locale-agnostic — am/appman always uses numbered lists
+        // regardless of language.
+        if ((/[:?]\s*$/.test(line)) && !/\?\d+$/.test(line)) {
+          // Heuristic: peek ahead to confirm the next non-empty line is a
+          // numbered option; otherwise skip to avoid false positives.
+          let hasNumberedOption = false;
+          for (let peek = idx + 1; peek < Math.min(idx + 4, lines.length); peek++) {
+            const pl = lines[peek]?.trim();
+            if (!pl || /^[-=]+$/.test(pl)) continue;
+            if (/^\s*\d+[\.|\)]/.test(pl)) { hasNumberedOption = true; break; }
+            break;
+          }
+          if (!hasNumberedOption) continue;
           // Collect all numbered options in the following lines until end of buffer
           const options = [];
           for (let j = idx + 1; j < lines.length; j++) {
@@ -661,7 +674,7 @@ ipcMain.handle('install-start', async (event, name) => {
                   let next = lines[j + 1].trim();
                   if (next && !/^\s*\d+[\.|\)]/.test(next) && !/^[-=]+$/.test(next)) {
                     opt += ' ' + next;
-                    j++; // Sauter la ligne suivante
+                    j++; // skip next line
                   }
                 }
                 options.push(opt);
@@ -881,12 +894,6 @@ ipcMain.handle('list-apps-detailed', async () => {
         const lines = (listRes.stdout || '').split('\n');
         let inCatalog = false;
         let seenAppEntry = false;
-        const ignoreNamePatterns = [
-          /^YOU/i,
-          /^-/,
-          /^TOTAL/i,
-          /^\*has/i
-        ];
         // curEntry tracks the current ◆ entry so continuation lines can be
         // appended to its description (descriptions can span multiple lines).
         let curName = null;
@@ -931,7 +938,10 @@ ipcMain.handle('list-apps-detailed', async () => {
               desc = rest.slice(colonIdx + 1).trim() || null;
             }
             const name = left.split(/\s+/)[0].trim();
-            if (ignoreNamePatterns.some(re => re.test(name))) continue;
+            // Structural check: valid am/appman app names are alphanumeric
+            // with dots, underscores, or hyphens. Skip anything that doesn't
+            // match — this is locale-independent.
+            if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(name)) continue;
             curName = name;
             curDesc = desc;
             curInCatalog = inCatalog;
@@ -947,46 +957,45 @@ ipcMain.handle('list-apps-detailed', async () => {
       }
 
       // Parse installed list from -f output (appman -f prints installed programs)
-      // Example -f lines:
-      // "◆ pycharm             | 2025.2.2               | appimage       | 823 MiB"
+      // Example -f lines (English):
+      //   - APPNAME  | VERSION | TYPE     | SIZE
+      //   - -------  | ------- | ----     | ----
+      //   ◆ opencode | 1.17.7 ✓ | appimage | 161 MiB
+      // Example -f lines (Serbian):
+      //   - APLIKACIJA | VERZIJA  | TIP      | VELIČINA
+      //   - -------    | -------  | ----     | ----
+      //   ◆ opencode   | 1.17.7 ✓ | appimage | 161 MiB
+      //
+      // Strategy: detect the header line structurally (a line starting with
+      // "- " that contains "|" separators), skip the separator row after it,
+      // then only process diamond-prefixed data rows. This is completely
+      // locale-independent.
       try {
         const lines = (instRes.stdout || '').split('\n');
-        const ignoreNamePatterns = [
-          /^YOU/i,
-          /^-/,
-          /^TOTAL/i,
-          /^\*has/i
-        ];
-        let versionColIdx = 2; // default: column 3 (0-based)
         let headerParsed = false;
         for (const raw of lines) {
           let line = raw.trim();
           if (!line) continue;
-          if (line.startsWith('APPNAME') || line.startsWith('- APPNAME')) {
-            // Detect the version column dynamically
-            const headerCols = line.replace(/^- /, '').split('|').map(s => s.trim());
-            versionColIdx = headerCols.findIndex(col => col.toLowerCase().startsWith('version'));
+          if (line.startsWith('-------')) continue;
+          // Detect header structurally: starts with "- " and contains "|"
+          if (!headerParsed && line.startsWith('- ') && line.includes('|')) {
             headerParsed = true;
             continue;
           }
-          if (line.startsWith('-------')) continue; // skip the separator line
+          if (!headerParsed) continue; // skip everything before the header
+          // Only process diamond-prefixed data rows
           if (line.startsWith('\u25c6')) line = line.slice(1).trim();
+          else continue; // skip summary lines, footers, blank lines
           if (!line) continue;
-          // Try to parse "name | ... | version | ..." separated by |
           if (line.includes('|')) {
             const cols = line.split('|').map(s => s.trim()).filter(Boolean);
             const name = cols[0] ? cols[0].split(/\s+/)[0].trim() : null;
-            const version = (typeof versionColIdx === 'number' && versionColIdx >= 0 && versionColIdx < cols.length) ? cols[versionColIdx] : null;
-            if (name && !ignoreNamePatterns.some(re => re.test(name))) {
-              installedSet.add(name);
-              if (version) installedDesc.set(name, version);
-            }
-          } else {
-            // Fallback: first token is name, second token may be version
-            const parts = line.split(/\s+/).filter(Boolean);
-            const name = parts[0] || null;
-            const version = parts[1] || null;
-            if (name && !ignoreNamePatterns.some(re => re.test(name))) {
+            // Version column is always the 3rd from the end (last two are TYPE and SIZE).
+            // This handles both 4-col (APPNAME|VERSION|TYPE|SIZE) and
+            // 5-col (APPNAME|DB|VERSION|TYPE|SIZE) formats from appman.
+            const versionColIdx = Math.max(1, cols.length - 3);
+            const version = (versionColIdx >= 0 && versionColIdx < cols.length) ? cols[versionColIdx] : null;
+            if (name) {
               installedSet.add(name);
               if (version) installedDesc.set(name, version);
             }
