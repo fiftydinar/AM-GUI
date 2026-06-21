@@ -989,7 +989,7 @@ ipcMain.handle('list-apps-detailed', async () => {
           if (!line) continue;
           if (line.includes('|')) {
             const cols = line.split('|').map(s => s.trim()).filter(Boolean);
-            const name = cols[0] ? cols[0].split(/\s+/)[0].trim() : null;
+            const name = cols[0] ? cols[0].split(/\s+/)[0].trim().replace(/\*+$/, '') : null;
             // Version column is always the 3rd from the end (last two are TYPE and SIZE).
             // This handles both 4-col (APPNAME|VERSION|TYPE|SIZE) and
             // 5-col (APPNAME|DB|VERSION|TYPE|SIZE) formats from appman.
