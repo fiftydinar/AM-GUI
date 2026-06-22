@@ -1566,10 +1566,8 @@ async function cancelActiveInstall(expectedName = null) {
       await loadApps();
       applySearch();
     } catch (_){ }
-  } catch (err) {
-    if (typeof window.showCopiableError === 'function') {
-      window.showCopiableError(t('error.global', { msg: 'Cancel: ' + (err?.message || err) }));
-    }
+  } catch (_) {
+    showToast(t('toast.cancelError'));
   }
 }
 let syncBtn = null;
