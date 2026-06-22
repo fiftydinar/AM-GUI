@@ -903,7 +903,11 @@ ipcMain.handle('list-apps-detailed', async () => {
   });
   return new Promise(async (resolve) => {
     try {
-      const [listRes, instRes] = await Promise.all([execPromise(listCmd), execPromise(installedCmd)]);
+      // Run sequentially — not in parallel — because both `am -l` and `am -f`
+      // share the same $AMCACHEDIR/version-args cache file. Running them
+      // concurrently causes one to delete the cache while the other reads it.
+      const listRes = await execPromise(listCmd);
+      const instRes = await execPromise(installedCmd);
       if ((listRes.err && listRes.err.code === 127) || (instRes.err && instRes.err.code === 127)) {
         invalidatePackageManagerCache();
       }
@@ -1013,6 +1017,7 @@ ipcMain.handle('list-apps-detailed', async () => {
       // by detecting title lines that precede table headers.
       try {
         const lines = (instRes.stdout || '').split('\n');
+        const seenInstalled = new Set();
         let headerParsed = false;
         let currentScope = null;
         for (const raw of lines) {
@@ -1046,16 +1051,25 @@ ipcMain.handle('list-apps-detailed', async () => {
           else continue; // skip summary lines, footers, blank lines
           if (!line) continue;
           if (line.includes('|')) {
-            const cols = line.split('|').map(s => s.trim()).filter(Boolean);
+            const rawCols = line.split('|').map(s => s.trim());
+            // Strip trailing empty columns (from trailing pipes) but keep
+            // empty middle columns so 5-col rows don't collapse to 4.
+            while (rawCols.length > 1 && rawCols[rawCols.length - 1] === '') rawCols.pop();
+            const cols = rawCols;
             const name = cols[0] ? cols[0].split(/\s+/)[0].trim().replace(/\*+$/, '') : null;
-            // Version column is always the 3rd from the end (last two are TYPE and SIZE).
-            // This handles both 4-col (APPNAME|VERSION|TYPE|SIZE) and
-            // 5-col (APPNAME|DB|VERSION|TYPE|SIZE) formats from appman.
-            const versionColIdx = Math.max(1, cols.length - 3);
+            // VERSION is at index 2 in the 5-col format (NAME|DB|VERSION|TYPE|SIZE).
+            // When the terminal wraps a long row, only 3 columns survive on the
+            // first line (NAME|DB|VERSION) — the version is still at index 2.
+            // In the rare 4-col format (NAME|VERSION|TYPE|SIZE) it is at index 1.
+            const versionColIdx = (cols.length === 4) ? 1 : 2;
             const version = (versionColIdx >= 0 && versionColIdx < cols.length) ? cols[versionColIdx] : null;
             if (name) {
-              installedEntries.push({ name, scope: currentScope || null, version: version || null });
-              installedNameSet.add(name);
+              const entryKey = (currentScope || '') + ':' + name;
+              if (!seenInstalled.has(entryKey)) {
+                seenInstalled.add(entryKey);
+                installedEntries.push({ name, scope: currentScope || null, version: version || null });
+                installedNameSet.add(name);
+              }
               if (version) installedDesc.set(name, version);
               if (currentScope) installedScope.set(name, currentScope);
             }
@@ -1078,6 +1092,7 @@ ipcMain.handle('list-apps-detailed', async () => {
           }
         }
       }
+
 
       // Build bundle-child map: apps whose description says
       // "This script installs the full 'X' suite" are children of X.

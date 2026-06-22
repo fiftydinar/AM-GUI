@@ -2373,7 +2373,7 @@ async function loadApps() {
   state.mutexRedirect = {};
   applyAppGroupFiltering(detailed.bundleChildOf);
   if (seq !== _loadAppsSeq) return; // stale
-  if (installedCountEl) installedCountEl.textContent = String(state.allApps.filter(a => a.installed && a.hasDiamond).length);
+  if (installedCountEl) installedCountEl.textContent = String(state.allApps.filter(a => a.installed).length);
   cleanupSandboxCache();
   rerenderActiveCategory();
   refreshAllSandboxBadges();
