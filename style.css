@@ -528,6 +528,7 @@ body.details-mode .scroll-shell { top:calc(var(--header-h) + var(--subbar-h)); }
 @keyframes panelIn { from { opacity:0; transform:translate(-50%, -4px); } to { opacity:1; transform:translate(-50%, 0); } }
 .settings-group { display:flex; flex-direction:column; gap:6px; font-size:13px; }
 .settings-title { font-size:12px; text-transform:uppercase; letter-spacing:.8px; font-weight:600; color:var(--muted); }
+.settings-hint { font-size:11px; color:var(--muted); margin-top:4px; font-style:italic; }
 .settings-group label { display:flex; align-items:center; gap:6px; cursor:pointer; }
 .settings-group input[type=radio] { accent-color: var(--primary); }
 .settings-separator { height:1px; background:var(--border); margin:4px 0; }
@@ -999,6 +1000,7 @@ body.details-mode #appDetails { opacity:1; transform:translateY(0); }
 .updated-meta { display:flex; flex-direction:column; gap:2px; }
 .updated-name { font-weight:600; font-size:13px; }
 .updated-version { font-size:12px; color:var(--muted); overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+.updated-scope-tag { font-size:10px; color:var(--accent); margin-left:4px; opacity:.8; }
 .updates-actions-row { display:flex; flex-direction:row; align-items:center; gap:4px; justify-content:center; }
 
 .updates-toggle-icon {

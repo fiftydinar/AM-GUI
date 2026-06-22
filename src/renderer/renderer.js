@@ -194,7 +194,13 @@ function createInstalledSection(sectionKey) {
   const section = document.createElement('div');
   section.className = 'installed-section';
   const title = document.createElement('h4');
-  title.textContent = t(sectionKey === 'sandboxed' ? 'installed.section.sandboxed' : 'installed.section.others');
+  const keyMap = {
+    sandboxed: 'installed.section.sandboxed',
+    others: 'installed.section.others',
+    system: 'installed.section.system',
+    user: 'installed.section.user'
+  };
+  title.textContent = t(keyMap[sectionKey] || 'installed.section.others');
   section.appendChild(title);
   return section;
 }
@@ -204,6 +210,8 @@ function buildTile(item){
     return createInstalledSection(item.__section);
   }
   const { name, installed, desc } = typeof item === 'string' ? { name: item, installed: false, desc: null } : item;
+  const scope = item?.scope || null;
+  const appId = scope ? name + '|' + scope : name;
   const label = prettifyAppName(name);
   const version = item?.version ? String(item.version) : null;
   let shortDesc = desc || (installed ? t('installed.localDesc') : t('installed.availableDesc'));
@@ -240,7 +248,7 @@ function buildTile(item){
   }
   const tile = document.createElement('div');
   tile.className = 'app-tile';
-  tile.setAttribute('data-app', name);
+  tile.setAttribute('data-app', appId);
   const isSandboxedTile = installed && isAppSandboxed(name);
   const badgeSymbol = isSandboxedTile ? '🔒' : '✓';
   const badgeText = t('installed.badge');
@@ -284,13 +292,13 @@ function buildTile(item){
   tile.tabIndex = 0; // keyboard navigation
   tile.addEventListener('click', (ev) => {
     if (ev.target.closest('.inline-action')) return; // don't open if clicking an action button
-    showDetails(name);
+    showDetails(appId);
   });
   tile.addEventListener('keydown', (ev) => {
     if (ev.key === 'Enter' || ev.key === ' ') {
       if (ev.target.closest('.inline-action')) return;
       ev.preventDefault();
-      showDetails(name);
+      showDetails(appId);
     }
   });
   return tile;
@@ -591,6 +599,9 @@ let activeInstallSession = {
 };
 // Sequential queue
 const installQueue = []; // noms d'apps en attente (FIFO)
+const installScopeMap = new Map(); // name → 'system' | 'user'
+let installScope = 'user'; // default scope for am installs
+let detailScopeOverride = null; // per-detail-view override, cleared on back
 
 let detailsApi = null;
 
@@ -605,6 +616,8 @@ function ensureDetailsApi() {
     showToast,
     translate: t,
     enqueueInstall,
+    getInstallScope: () => detailScopeOverride ?? installScope,
+    setInstallScope: (s) => { installScope = s; },
     removeFromQueue,
     refreshAllInstallButtons,
     setAppList,
@@ -615,6 +628,8 @@ function ensureDetailsApi() {
     appsContainer: appsDiv,
     getActiveInstallSession: () => activeInstallSession,
     applyDetailsSandboxBadge,
+    updateScopeButtonUI,
+    onExitDetails: () => { detailScopeOverride = null; },
     elements: {
       appDetailsSection,
       backToListBtn,
@@ -780,11 +795,7 @@ function renderSandboxCard() {
   const installedFromInfo = typeof info.installed === 'boolean' ? info.installed : null;
   const installedFromList = isAppInstalledInList(sandboxState.currentApp);
   const installedFromDetailsBtn = detailsInstallBtn ? detailsInstallBtn.hidden : null;
-  const installedFlag = (installedFromInfo === true)
-    ? true
-    : (installedFromInfo === false)
-      ? false
-      : (installedFromList || installedFromDetailsBtn === true);
+  const installedFlag = !!(installedFromInfo || installedFromList || installedFromDetailsBtn === true);
   const forbiddenReason = info?.sandboxForbiddenReason || (info?.selfSandboxProhibited ? 'self' : null);
   const sandboxEligible = isSandboxSupported(sandboxState.currentApp, info) && !forbiddenReason;
   sandboxState.supported = sandboxEligible;
@@ -1006,7 +1017,8 @@ function refreshSandboxBadgesForApp(appName) {
   const lower = appName.toLowerCase();
   const active = isAppSandboxed(appName);
   document.querySelectorAll('.app-tile').forEach(tile => {
-    const tileName = (tile.getAttribute('data-app') || '').toLowerCase();
+    const appId = (tile.getAttribute('data-app') || '').toLowerCase();
+    const tileName = appId.includes('|') ? appId.slice(0, appId.lastIndexOf('|')) : appId;
     if (tileName !== lower) return;
     const iconWrapper = tile.querySelector('.tile-icon');
     applySandboxBadgeToIcon(iconWrapper, active);
@@ -1018,7 +1030,8 @@ function refreshSandboxBadgesForApp(appName) {
 
 function refreshAllSandboxBadges() {
   document.querySelectorAll('.app-tile').forEach(tile => {
-    const tileName = tile.getAttribute('data-app');
+    const appId = tile.getAttribute('data-app') || '';
+    const tileName = appId.includes('|') ? appId.slice(0, appId.lastIndexOf('|')) : appId;
     if (!tileName) return;
     const iconWrapper = tile.querySelector('.tile-icon');
     applySandboxBadgeToIcon(iconWrapper, isAppSandboxed(tileName));
@@ -1199,6 +1212,59 @@ sandboxInstallAppBtn?.addEventListener('click', () => {
 
 sandboxLogToggle?.addEventListener('click', () => {
   setSandboxLogExpanded(!isSandboxLogExpanded());
+});
+
+// Scope toggle for am installs (system vs user)
+const installScopeBtn = document.getElementById('installScopeBtn');
+
+function updateScopeButtonUI() {
+  const btn = document.getElementById('installScopeBtn');
+  if (!btn) return;
+  const isAm = state.pmName === 'am';
+  btn.hidden = !isAm;
+  if (isAm) {
+    const effectiveScope = detailScopeOverride ?? installScope;
+    btn.textContent = t('settings.installScope') + ': ' + (effectiveScope === 'user' ? t('install.scope.user') : t('install.scope.system'));
+  }
+}
+
+installScopeBtn?.addEventListener('click', () => {
+  const effectiveScope = detailScopeOverride ?? installScope;
+  detailScopeOverride = effectiveScope === 'user' ? 'system' : 'user';
+  state.currentDetailsScope = detailScopeOverride;
+  updateScopeButtonUI();
+  // Re-render install/uninstall buttons for the new scope
+  if (state.currentDetailsApp) {
+    const currentAppId = state.currentDetailsApp;
+    const parsedName = currentAppId.includes('|') ? currentAppId.slice(0, currentAppId.lastIndexOf('|')) : currentAppId;
+    const newScope = detailScopeOverride ?? installScope;
+    // Update currentDetailsApp so post-uninstall refresh uses the correct scope
+    state.currentDetailsApp = parsedName + '|' + newScope;
+    const app = (state.allApps || []).find(e => e && e.name === parsedName && e.scope === newScope);
+    const isInstalled = !!app && !!app.installed;
+    const appVersion = app?.version || null;
+    if (detailsInstallBtn) {
+      detailsInstallBtn.hidden = isInstalled;
+      detailsInstallBtn.setAttribute('data-name', parsedName);
+      detailsInstallBtn.classList.remove('loading');
+      detailsInstallBtn.disabled = false;
+      detailsInstallBtn.textContent = t('details.install');
+      detailsInstallBtn.setAttribute('data-action', 'install');
+      detailsInstallBtn.setAttribute('aria-label', t('details.install'));
+    }
+    if (detailsUninstallBtn) {
+      detailsUninstallBtn.hidden = !isInstalled;
+      detailsUninstallBtn.disabled = false;
+      detailsUninstallBtn.setAttribute('data-name', parsedName);
+    }
+    if (detailsName) {
+      const label = prettifyAppName(parsedName);
+      const version = appVersion ? ' · ' + appVersion : '';
+      const scopeLabel = newScope ? ' <span class="updated-scope-tag">(' + (newScope === 'user' ? t('install.scope.user') : t('install.scope.system')) + ')</span>' : '';
+      detailsName.innerHTML = `${label}${version}${scopeLabel}`;
+      detailsName.dataset.app = parsedName.toLowerCase();
+    }
+  }
 });
 
 sandboxOpenBtn?.addEventListener('click', async () => {
@@ -1403,7 +1469,8 @@ function refreshTileBadges() {
   if (!state.installed || typeof state.installed.has !== 'function') return; // safety guard
   const tiles = document.querySelectorAll('.app-tile');
   tiles.forEach(tile => {
-    const name = tile.getAttribute('data-app');
+    const appId = tile.getAttribute('data-app') || '';
+    const name = appId.includes('|') ? appId.slice(0, appId.lastIndexOf('|')) : appId;
     const installed = state.installed.has(name);
     const nameEl = tile.querySelector('.tile-name');
     if (!nameEl) return;
@@ -1433,18 +1500,26 @@ function processNextInstall(){
   if (activeInstallSession.id && !activeInstallSession.done) return;
   if (!installQueue.length) return;
   const next = installQueue.shift();
+  const scope = installScopeMap.get(next) || installScope;
+  installScopeMap.delete(next);
   refreshQueueUI();
   refreshTileBadges();
   // Nettoyer busy sur toutes les autres tuiles, puis marquer uniquement celle en cours
   document.querySelectorAll('.app-tile.busy').forEach(t => t.classList.remove('busy'));
-  const tile = document.querySelector(`.app-tile[data-app="${CSS.escape(next)}"]`);
+  const tile = Array.from(document.querySelectorAll('.app-tile')).find(t => {
+    const d = t.getAttribute('data-app') || '';
+    return d === next || d.startsWith(next + '|');
+  });
   if (tile) tile.classList.add('busy');
-  const inlineBtn = document.querySelector(`.inline-action.install[data-app="${CSS.escape(next)}"]`);
+  const inlineBtn = Array.from(document.querySelectorAll('.inline-action.install')).find(b => {
+    const d = b.getAttribute('data-app') || '';
+    return d === next || d.startsWith(next + '|');
+  });
   if (inlineBtn) inlineBtn.disabled = true;
   showToast(t('toast.installing', {name: next}));
-  startStreamingInstall(next).catch(() => {
+  startStreamingInstall(next, scope).catch(() => {
     // Fallback: run via amAction then chain
-    window.electronAPI.amAction('install', next).then(()=>{
+    window.electronAPI.amAction('install', next, scope).then(()=>{
       loadApps().then(()=> applySearch());
     }).finally(()=>{
       activeInstallSession.done = true;
@@ -1454,13 +1529,14 @@ function processNextInstall(){
   refreshAllInstallButtons();
 }
 
-function enqueueInstall(name){
+function enqueueInstall(name, scope){
   if (!name) return;
   // Check if already in progress or in queue
   if ((activeInstallSession.name === name && !activeInstallSession.done) || installQueue.includes(name)) {
     showToast(t('toast.alreadyInQueue', {name}));
     return;
   }
+  if (scope) installScopeMap.set(name, scope);
   if (activeInstallSession.id && !activeInstallSession.done) {
     installQueue.push(name);
   refreshQueueUI();
@@ -2058,7 +2134,11 @@ const settingsPanelApi = window.ui?.settingsPanel?.init?.({
   applyThemePreference,
   loadOpenExternalPref,
   saveOpenExternalPref,
-  onIconCachePurged: handleIconCachePurged
+  onIconCachePurged: handleIconCachePurged,
+  onInstallScopeChange: (scope) => {
+    installScope = scope;
+    updateScopeButtonUI();
+  }
 }) || null;
 
 window.addEventListener('DOMContentLoaded', async () => {
@@ -2178,7 +2258,9 @@ document.addEventListener('click', (ev) => {
     window.electronAPI.openExternal(href);
   }
 }, { capture: true });
+let _loadAppsSeq = 0;
 async function loadApps() {
+  const seq = ++_loadAppsSeq;
   appsDiv?.setAttribute('aria-busy','true');
   let detailed;
   try {
@@ -2186,6 +2268,7 @@ async function loadApps() {
   } catch (e) {
     detailed = { all: [], installed: [], error: t('error.ipc', {msg: e?.message || e}) };
   }
+  if (seq !== _loadAppsSeq) return; // stale – a newer loadApps is running
   if (!detailed.pmFound) {
     state.allApps = [];
     state.filtered = [];
@@ -2212,6 +2295,21 @@ async function loadApps() {
   }
   state.allApps = detailed.all || [];
   state.filtered = state.allApps;
+  state.pmName = detailed.pmName || null;
+  // Default install scope: 'user' for am, null for appman; restore from localStorage
+  const savedScope = localStorage.getItem('installScope');
+  installScope = state.pmName === 'am' ? (savedScope || 'user') : null;
+  // Show/hide install scope setting in preferences
+  // Show only for am (supports both system and user scopes)
+  const scopeSettingsGroup = document.getElementById('installScopeSettingsGroup');
+  if (scopeSettingsGroup) {
+    scopeSettingsGroup.hidden = state.pmName !== 'am';
+    if (state.pmName === 'am') {
+      scopeSettingsGroup.querySelectorAll('input[name="installScopePref"]').forEach(r => {
+        r.checked = r.value === installScope;
+      });
+    }
+  }
   // Build the set of installed apps
   try {
     const installedNames = new Set();
@@ -2274,6 +2372,7 @@ async function loadApps() {
   state.bundleChildOf = detailed.bundleChildOf || {};
   state.mutexRedirect = {};
   applyAppGroupFiltering(detailed.bundleChildOf);
+  if (seq !== _loadAppsSeq) return; // stale
   if (installedCountEl) installedCountEl.textContent = String(state.allApps.filter(a => a.installed && a.hasDiamond).length);
   cleanupSandboxCache();
   rerenderActiveCategory();
@@ -2374,6 +2473,7 @@ function showDetails(appName) {
   if (detailsInstallBtn) {
     detailsInstallBtn.hidden = !!app.installed;
     detailsInstallBtn.setAttribute('data-name', app.name);
+    detailsInstallBtn.setAttribute('data-name', app.name);
     // Always remove spinner and re-enable the button
   detailsInstallBtn.classList.remove('loading');
   detailsInstallBtn.disabled = false;
@@ -2388,6 +2488,8 @@ function showDetails(appName) {
     }
     refreshAllInstallButtons();
   }
+  // Show scope toggle only when PM is 'am' and app is not installed
+  updateScopeButtonUI();
   // Restore streaming panel if an ongoing install matches this app
   if (installStream) {
     if (activeInstallSession.id && !activeInstallSession.done && activeInstallSession.name === app.name) {
@@ -2458,8 +2560,15 @@ const legacyExitDetailsView = exitDetailsView;
   if (!api) return;
   showDetails = (appName) => {
     if (api && typeof api.showDetails === 'function') {
+      // Set detail scope from the clicked entry's scope
+      const pipeIdx = appName.lastIndexOf('|');
+      if (pipeIdx !== -1) {
+        const scope = appName.slice(pipeIdx + 1);
+        if (scope === 'system' || scope === 'user') detailScopeOverride = scope;
+      }
       const result = api.showDetails(appName);
-      try { handleSandboxShow(appName); } catch (_) {}
+      const plainName = appName.includes('|') ? appName.slice(0, appName.lastIndexOf('|')) : appName;
+      try { handleSandboxShow(plainName); } catch (_) {}
       return result;
     }
     return legacyShowDetails(appName);
@@ -2519,7 +2628,7 @@ appsDiv?.addEventListener('click', (e) => {
         actionBtn.disabled = true;
         const tile = actionBtn.closest('.app-tile');
         if (tile){ tile.classList.add('busy'); }
-        enqueueInstall(appName);
+        enqueueInstall(appName, detailScopeOverride ?? installScope);
       });
     } else if (action === 'uninstall') {
       openActionConfirm({
@@ -2599,7 +2708,7 @@ window.addEventListener('keydown', (e) => {
   if (appsDiv) appsDiv.hidden = false;
   // Restore any previous detail (session) if still present
   const last = sessionStorage.getItem('lastDetailsApp');
-  if (last && state.allApps.find(a=>a.name===last)) {
+  if (last && (state.allApps.find(a => a.name === last) || state.allApps.find(a => (a.scope ? a.name + '|' + a.scope : a.name) === last))) {
     showDetails(last);
   }
 
@@ -3153,12 +3262,19 @@ function handleUpdateCompletion(fullText){
         const meta = document.createElement('div'); meta.className = 'updated-meta';
         const title = document.createElement('div'); title.className = 'updated-name'; title.textContent = displayName;
         const ver = document.createElement('div'); ver.className = 'updated-version';
+        const appScope = appObj && appObj.scope ? appObj.scope : null;
         if (versionInfo && typeof versionInfo === 'object' && versionInfo.old && versionInfo.new) {
           ver.textContent = versionInfo.old + ' → ' + versionInfo.new;
         } else {
           const displayVersion = versionInfo || fallbackVer;
           ver.textContent = displayVersion ? String(displayVersion) : '';
           if (!displayVersion) ver.hidden = true;
+        }
+        if (appScope) {
+          const scopeTag = document.createElement('span');
+          scopeTag.className = 'updated-scope-tag';
+          scopeTag.textContent = appScope === 'system' ? `(${t('install.scope.system')})` : `(${t('install.scope.user')})`;
+          ver.appendChild(scopeTag);
         }
         meta.appendChild(title);
         meta.appendChild(ver);
@@ -3402,14 +3518,17 @@ let currentInstallStart = 0;
 let installElapsedInterval = null;
 
 
-function startStreamingInstall(name){
+function startStreamingInstall(name, scope){
   initXtermLog();
   if (!window.electronAPI.installStart) {
     return Promise.reject(new Error('Streaming non supporté'));
   }
   // Marquer uniquement la tuile active busy (et enlever des autres)
   document.querySelectorAll('.app-tile.busy').forEach(t => t.classList.remove('busy'));
-  const activeTile = document.querySelector(`.app-tile[data-app="${CSS.escape(name)}"]`);
+  const activeTile = Array.from(document.querySelectorAll('.app-tile')).find(t => {
+    const d = t.getAttribute('data-app') || '';
+    return d === name || d.startsWith(name + '|');
+  });
   if (activeTile) activeTile.classList.add('busy');
     if (installStream) {
       installStream.hidden = false;
@@ -3432,7 +3551,7 @@ function startStreamingInstall(name){
       installStreamElapsed.textContent = secs + 's';
     }
   }, 1000);
-  return window.electronAPI.installStart(name).then(res => {
+  return window.electronAPI.installStart(name, scope).then(res => {
     if (res && res.error){
       showToast(res.error);
       if (installStream) installStream.hidden = true;
@@ -3555,8 +3674,7 @@ if (window.electronAPI.onInstallProgress){
             if (targetName) showDetails(targetName);
           }
           if (msg.name) {
-            const tile = document.querySelector(`.app-tile[data-app="${CSS.escape(msg.name)}"]`);
-            if (tile) tile.classList.remove('busy');
+            document.querySelectorAll(`.app-tile[data-app="${CSS.escape(msg.name)}"]`).forEach(t => t.classList.remove('busy'));
           }
           refreshQueueUI();
           refreshAllInstallButtons();

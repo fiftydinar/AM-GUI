@@ -100,6 +100,12 @@
           applyThemePreference();
           togglePanel(false);
         }
+        if (target.name === 'installScopePref') {
+          localStorage.setItem('installScope', target.value);
+          if (typeof options.onInstallScopeChange === 'function') {
+            options.onInstallScopeChange(target.value);
+          }
+        }
       });
     }
 

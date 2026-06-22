@@ -9,14 +9,14 @@ try {
 
 let systemLocale = null;
 contextBridge.exposeInMainWorld('electronAPI', {
-  amAction: (action, software) => ipcRenderer.invoke('am-action', action, software),
+  amAction: (action, software, scope) => ipcRenderer.invoke('am-action', action, software, scope),
   listAppsDetailed: () => ipcRenderer.invoke('list-apps-detailed'),
   windowControl: (action) => ipcRenderer.invoke('window-control', action),
   openExternal: (url) => ipcRenderer.invoke('open-external', url),
   desktopEnv: () => desktopEnv,
   systemLocale: () => systemLocale,
   envLang: () => process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || null,
-  installStart: (name) => ipcRenderer.invoke('install-start', name),
+  installStart: (name, scope) => ipcRenderer.invoke('install-start', name, scope),
   installCancel: (id) => ipcRenderer.invoke('install-cancel', id, id),
   installSendChoice: (id, choice) => ipcRenderer.invoke('install-send-choice', id, choice),
   onInstallProgress: (cb) => ipcRenderer.on('install-progress', (e, msg) => cb && cb(msg)),
