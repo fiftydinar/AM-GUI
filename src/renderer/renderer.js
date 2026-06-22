@@ -2143,16 +2143,14 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     initMarkdownLightbox();
     initIconObserver();
-    await loadApps();
-    if (state.allApps && state.allApps.length > 0) {
-      showToast(t('categories.allAppsCount', { count: state.allApps.length }));
-    }
+    const loadAppsPromise = loadApps();
     if (window.categories && typeof window.categories.initDropdown === 'function') {
-      await window.categories.initDropdown({
+      window.categories.initDropdown({
         state,
         t,
         showToast,
         setAppList,
+        applySearch,
         loadApps,
         appDetailsSection,
         appsDiv,
@@ -2187,6 +2185,10 @@ window.addEventListener('DOMContentLoaded', async () => {
       replaceSyncButton(syncBtn);
     }
     initLanguagePreferences();
+    await loadAppsPromise;
+    if (state.allApps && state.allApps.length > 0) {
+      showToast(t('categories.allAppsCount', { count: state.allApps.length }));
+    }
   } catch (err) {
     console.error('Erreur initialisation DOM', err);
   }

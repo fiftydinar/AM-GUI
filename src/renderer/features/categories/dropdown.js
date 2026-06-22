@@ -46,6 +46,7 @@
     const translate = typeof options.t === 'function' ? options.t : (key) => key;
     const showToast = typeof options.showToast === 'function' ? options.showToast : null;
     const setAppList = typeof options.setAppList === 'function' ? options.setAppList : () => {};
+    const applySearch = typeof options.applySearch === 'function' ? options.applySearch : null;
     const loadApps = typeof options.loadApps === 'function' ? options.loadApps : null;
     const appDetailsSection = options.appDetailsSection || null;
     const appsDiv = options.appsDiv || null;
@@ -59,6 +60,25 @@
     const ensureAppList = (apps) => Array.isArray(apps)
       ? apps.filter(item => !!item)
       : [];
+
+    const buildAllAlphabetical = (apps) => {
+      const source = Array.isArray(apps) ? apps : [];
+      const byName = new Map();
+      source.forEach(app => {
+        if (!app || !app.name) return;
+        const key = String(app.name).toLowerCase();
+        if (!byName.has(key)) byName.set(key, app);
+      });
+      return Array.from(byName.values()).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
+    };
+
+    const renderAllApps = () => {
+      if (applySearch) {
+        applySearch();
+        return;
+      }
+      setAppList(buildAllAlphabetical(state.allApps));
+    };
 
     const setCategoryOverride = (label, apps) => {
       const list = ensureAppList(apps);
@@ -177,7 +197,7 @@
             if (loadApps) { (async () => { await loadApps(); })(); }
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
-            setAppList(state.allApps);
+            renderAllApps();
             if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
           }
         }, iconMap);
@@ -239,9 +259,6 @@
       });
     }
 
-    const tabApplications = document.querySelector('.tab[data-category="all"]');
-    if (tabApplications) tabApplications.click();
-
     function updateDropdownCategoriesVisibility() {
       const activeTab = document.querySelector('.tab.active');
       if (!dropdownCategories) return;
@@ -285,7 +302,7 @@
             if (loadApps) await loadApps();
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
-            setAppList(state.allApps);
+            renderAllApps();
             if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
           } else if (showToast) {
             showToast(translate('categories.noneFound'));
