@@ -3206,14 +3206,37 @@ function parseUpdatedBlock(text) {
   const blockLines = lines.slice(startIdx);
 
   // Parse the table structurally: find numbered rows (locale-independent)
+  // The (AppMan) or (AM) qualifier can appear after old version, new version, or both
+  const QUAL = '(?:\\s+\\((?:AppMan|AM)\\))?';
+  const VER = '[^\\s()]+';
+  const ROW_RE = new RegExp(
+    '^\\s*\\d+\\.\\s+([A-Za-z0-9._-]+)\\s+' + VER + QUAL + '\\s+' + VER + QUAL + '$'
+  );
   for (let i = 0; i < blockLines.length; i++) {
-    const m = blockLines[i].match(/^\s*\d+\.\s+([A-Za-z0-9._-]+)\s+(\S+)(?:\s+\((?:AppMan|AM)\))?\s+(\S+)(?:\s+\((?:AppMan|AM)\))?/);
-    if (m) {
-      const name = m[1].toLowerCase();
-      if (!name.endsWith('.am')) {
-        updated.add(name);
-        newVersions.set(name, { old: m[2], new: m[3] });
-      }
+    const line = blockLines[i].trim();
+    if (!ROW_RE.test(line)) continue;
+    const m = line.match(/^\s*\d+\.\s+([A-Za-z0-9._-]+)\s+(.*)/);
+    if (!m) continue;
+    const name = m[1].toLowerCase();
+    // Extract version tokens, filtering out (AppMan) and (AM) qualifiers
+    const allTokens = m[2].match(/\S+/g) || [];
+    const tokens = allTokens.filter(t => t !== '(AppMan)' && t !== '(AM)');
+    if (tokens.length < 2) continue;
+    const oldVer = tokens[tokens.length - 2];
+    const newVer = tokens[tokens.length - 1];
+    // Detect qualifier from the full line
+    const qualifier = /\((AppMan|AM)\)/.exec(line);
+    const scopeTag = qualifier ? qualifier[1] : null;
+    // AM: no qualifier = system, (AppMan) = user
+    // AppMan: no qualifier = user (only scope), no qualifier shown
+    let scope;
+    if (scopeTag === 'AppMan') scope = 'user';
+    else if (scopeTag === 'AM') scope = 'system';
+    else scope = state.pmName === 'appman' ? 'user' : 'system';
+    const key = name + '|' + scope;
+    if (!name.endsWith('.am')) {
+      updated.add(key);
+      newVersions.set(key, { old: oldVer, new: newVer, name, scope });
     }
   }
   return { updated, newVersions, hasStructure: true };
@@ -3248,13 +3271,17 @@ function handleUpdateCompletion(fullText){
     if (updateFinalMessage) updateFinalMessage.textContent = t('updates.updatedApps');
     if (updatedAppsIcons) {
       updatedAppsIcons.innerHTML = '';
-      toShow.forEach(nameLower => {
+      toShow.forEach(keyLower => {
+        const pipeIdx = keyLower.lastIndexOf('|');
+        const rawName = pipeIdx !== -1 ? keyLower.slice(0, pipeIdx) : keyLower;
+        const scopeKey = pipeIdx !== -1 ? keyLower.slice(pipeIdx + 1) : null;
         const wrapper = document.createElement('div'); wrapper.className = 'updated-item';
         const img = document.createElement('img');
-        const appObj = state.allApps.find(a => String(a.name).toLowerCase() === String(nameLower).toLowerCase());
-        const rawName = appObj ? appObj.name : nameLower;
+        const appObj = scopeKey
+          ? state.allApps.find(a => String(a.name).toLowerCase() === rawName && a.scope === scopeKey)
+          : state.allApps.find(a => String(a.name).toLowerCase() === rawName);
         const displayName = prettifyAppName(rawName);
-        const versionInfo = newVersions.get(nameLower);
+        const versionInfo = newVersions.get(keyLower);
         const fallbackVer = appObj && appObj.version ? appObj.version : null;
         img.src = getIconUrl(rawName);
         img.alt = displayName;
@@ -3262,7 +3289,7 @@ function handleUpdateCompletion(fullText){
         const meta = document.createElement('div'); meta.className = 'updated-meta';
         const title = document.createElement('div'); title.className = 'updated-name'; title.textContent = displayName;
         const ver = document.createElement('div'); ver.className = 'updated-version';
-        const appScope = appObj && appObj.scope ? appObj.scope : null;
+        const appScope = scopeKey || (appObj && appObj.scope ? appObj.scope : null);
         if (versionInfo && typeof versionInfo === 'object' && versionInfo.old && versionInfo.new) {
           ver.textContent = versionInfo.old + ' → ' + versionInfo.new;
         } else {
@@ -3270,7 +3297,7 @@ function handleUpdateCompletion(fullText){
           ver.textContent = displayVersion ? String(displayVersion) : '';
           if (!displayVersion) ver.hidden = true;
         }
-        if (appScope) {
+        if (appScope && state.pmName === 'am') {
           const scopeTag = document.createElement('span');
           scopeTag.className = 'updated-scope-tag';
           scopeTag.textContent = appScope === 'system' ? `(${t('install.scope.system')})` : `(${t('install.scope.user')})`;
