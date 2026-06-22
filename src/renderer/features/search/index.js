@@ -176,15 +176,14 @@
       resetSearchModeIfNeeded();
       base = filterInstalled(allApps); // uses full allApps to include implied apps
     } else if (activeCategory === 'all') {
-      // Catalog view: deduplicate by name (keep first entry per name)
-      const seen = new Set();
-      base = allApps.filter(app => {
-        if (!app || !app.name) return false;
+      // Catalog view: deduplicate by name, then apply a pure alphabetical sort.
+      const byName = new Map();
+      allApps.forEach(app => {
+        if (!app || !app.name) return;
         const key = app.name.toLowerCase();
-        if (seen.has(key)) return false;
-        seen.add(key);
-        return true;
+        if (!byName.has(key)) byName.set(key, app);
       });
+      base = Array.from(byName.values()).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
     } else if (activeCategory !== 'all') {
       resetSearchModeIfNeeded();
       base = filterByCategory(allApps, activeCategory);

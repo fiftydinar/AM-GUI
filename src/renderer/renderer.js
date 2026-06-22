@@ -1220,7 +1220,7 @@ const installScopeBtn = document.getElementById('installScopeBtn');
 function updateScopeButtonUI() {
   const btn = document.getElementById('installScopeBtn');
   if (!btn) return;
-  const isAm = state.pmName === 'am';
+  const isAm = String(state.pmName || '').trim().toLowerCase() === 'am';
   btn.hidden = !isAm;
   if (isAm) {
     const effectiveScope = detailScopeOverride ?? installScope;
@@ -2297,15 +2297,16 @@ async function loadApps() {
   state.allApps = detailed.all || [];
   state.filtered = state.allApps;
   state.pmName = detailed.pmName || null;
+  const isAmPm = String(state.pmName || '').trim().toLowerCase() === 'am';
   // Default install scope: 'user' for am, null for appman; restore from localStorage
   const savedScope = localStorage.getItem('installScope');
-  installScope = state.pmName === 'am' ? (savedScope || 'user') : null;
+  installScope = isAmPm ? (savedScope || 'user') : null;
   // Show/hide install scope setting in preferences
   // Show only for am (supports both system and user scopes)
   const scopeSettingsGroup = document.getElementById('installScopeSettingsGroup');
   if (scopeSettingsGroup) {
-    scopeSettingsGroup.hidden = state.pmName !== 'am';
-    if (state.pmName === 'am') {
+    scopeSettingsGroup.hidden = !isAmPm;
+    if (isAmPm) {
       scopeSettingsGroup.querySelectorAll('input[name="installScopePref"]').forEach(r => {
         r.checked = r.value === installScope;
       });

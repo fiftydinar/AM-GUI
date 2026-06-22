@@ -126,7 +126,6 @@
       categoriesDropdownBtn.setAttribute('aria-expanded', 'false');
       categoriesDropdownBtn.classList.remove('active');
       if (categoriesDropdownOverlay) categoriesDropdownOverlay.hidden = true;
-      if (categoryBackBtn) categoryBackBtn.hidden = true;
     }
 
     function openCategoriesDropdown() {
@@ -147,21 +146,12 @@
     }
 
     document.addEventListener('click', (event) => {
-      if (!categoriesDropdownMenu.hidden && !categoriesDropdownMenu.contains(event.target) && event.target !== categoriesDropdownBtn && !event.target.closest('.category-back-btn')) {
+      if (!categoriesDropdownMenu.hidden && !categoriesDropdownMenu.contains(event.target) && event.target !== categoriesDropdownBtn) {
         closeCategoriesDropdown();
       }
     });
 
     cacheApi.load({ showToast });
-
-    const categoryBackBtn = document.getElementById('categoryBackBtn');
-    if (categoryBackBtn) {
-      categoryBackBtn.textContent = translate('details.back');
-      categoryBackBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeCategoriesDropdown();
-      });
-    }
 
     const tabSecondary = document.querySelector('.tab-secondary');
     if (tabSecondary) {
@@ -173,7 +163,6 @@
         if (appsDiv) appsDiv.hidden = false;
         state.currentDetailsApp = null;
         categoriesDropdownMenu.innerHTML = '';
-        if (categoryBackBtn) categoryBackBtn.hidden = false;
 
         // "All" option at the top
         const btnAll = createCategoryButton('all', () => {
