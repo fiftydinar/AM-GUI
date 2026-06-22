@@ -17,7 +17,11 @@
     if (state && state.activeCategory && state.activeCategory !== 'all') {
       const key = state.activeCategory.trim().toLowerCase();
       icon = iconMap[key] || '📦';
-      label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(state.activeCategory) : state.activeCategory;
+      if (key === 'autre') {
+        label = translate('categories.other');
+      } else {
+        label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(state.activeCategory) : state.activeCategory;
+      }
     } else {
       icon = '🗃️';
       label = translate('categories.all');
@@ -156,15 +160,6 @@
       categoryBackBtn.addEventListener('click', (e) => {
         e.stopPropagation();
         closeCategoriesDropdown();
-        clearCategoryOverride();
-        state.activeCategory = 'all';
-        updateLabel();
-        const tabAll = document.querySelector('.tab[data-category="all"]');
-        if (tabAll) tabAll.click();
-        else {
-          resetToAppsView();
-          setAppList(state.allApps || []);
-        }
       });
     }
 
@@ -179,6 +174,28 @@
         state.currentDetailsApp = null;
         categoriesDropdownMenu.innerHTML = '';
         if (categoryBackBtn) categoryBackBtn.hidden = false;
+
+        // "All" option at the top
+        const btnAll = createCategoryButton('all', () => {
+          closeCategoriesDropdown();
+          clearCategoryOverride();
+          state.activeCategory = 'all';
+          updateLabel();
+          resetToAppsView();
+          if (!Array.isArray(state.allApps) || state.allApps.length === 0) {
+            setAppList([]);
+            if (showToast) showToast(translate('categories.loading'));
+            if (loadApps) { (async () => { await loadApps(); })(); }
+          }
+          if (Array.isArray(state.allApps) && state.allApps.length > 0) {
+            setAppList(state.allApps);
+          }
+        }, iconMap);
+        btnAll.querySelector('span:last-child').textContent = translate('categories.all');
+        btnAll.querySelector('.cat-icon').textContent = '🗃️';
+        if (state.activeCategory === 'all') btnAll.classList.add('active');
+        categoriesDropdownMenu.appendChild(btnAll);
+
         const categories = await cacheApi.load({ showToast });
         categories.forEach(({ name, apps }) => {
           const btn = createCategoryButton(name, () => {
@@ -197,15 +214,16 @@
               apps: detailedApps,
               toastMessage: translate('categories.appCount', { label: name, count: filteredApps.length })
             });
-            // notify other parts (renderer) that a custom category was activated so they can refresh UI such as featured
             try { document.dispatchEvent(new CustomEvent('category.override', { detail: { name, count: detailedApps.length } })); } catch(_) {}
           }, iconMap);
+          if (state.activeCategory === name) btn.classList.add('active');
           categoriesDropdownMenu.appendChild(btn);
         });
         const btnOther = createCategoryButton('autre', () => {}, iconMap);
         btnOther.querySelector('span:last-child').textContent = translate('categories.other');
         btnOther.disabled = true;
         btnOther.innerHTML += ' <span class="cat-spinner" style="margin-left:8px;font-size:0.9em;">⏳</span>';
+        if (state.activeCategory === 'autre') btnOther.classList.add('active');
         categoriesDropdownMenu.appendChild(btnOther);
         setTimeout(() => {
           const allCategorizedNames = new Set();
