@@ -2144,6 +2144,9 @@ window.addEventListener('DOMContentLoaded', async () => {
     initMarkdownLightbox();
     initIconObserver();
     await loadApps();
+    if (state.allApps && state.allApps.length > 0) {
+      showToast(t('categories.allAppsCount', { count: state.allApps.length }));
+    }
     if (window.categories && typeof window.categories.initDropdown === 'function') {
       await window.categories.initDropdown({
         state,
