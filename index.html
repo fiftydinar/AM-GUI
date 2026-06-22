@@ -16,7 +16,6 @@
     <img id="mdLightboxImg" src="" alt="Image grand format" style="max-width:90vw;max-height:90vh;border-radius:12px;box-shadow:0 4px 30px rgba(0,0,0,.4);background:#111;" />
   </div>
   <div class="dropdown-overlay" id="categoriesDropdownOverlay" hidden></div>
-  <button id="categoryBackBtn" class="btn btn-outline category-back-btn" hidden></button>
   <div class="dropdown-menu-categories" id="categoriesDropdownMenu" role="menu" aria-labelledby="categoriesDropdownBtn" hidden></div>
   <header class="app-header" data-tauri-drag-region>
     <div class="brand">
@@ -57,6 +56,12 @@
           <div class="settings-group">
             <div class="settings-title" data-i18n="settings.gpuTitle">Accélération GPU</div>
             <label style="font-size:13px;"><input type="checkbox" id="disableGpuCheckbox"> <span data-i18n="settings.gpuLabel">Désactiver l'accélération GPU (pour corriger les bugs graphiques)</span></label>
+          </div>
+          <div class="settings-group" id="installScopeSettingsGroup" hidden>
+            <div class="settings-title" data-i18n="settings.installScope">Install scope</div>
+            <label><input type="radio" name="installScopePref" value="user" checked> <span data-i18n="install.scope.user">User</span></label>
+            <label><input type="radio" name="installScopePref" value="system"> <span data-i18n="install.scope.system">System</span></label>
+            <div class="settings-hint" data-i18n="settings.installScopeHint">Only applies when using AM, not AppMan.</div>
           </div>
           <div class="settings-separator"></div>
           <div class="settings-group">
@@ -200,6 +205,7 @@
           <button id="detailsInstallBtn" class="btn btn-primary" data-i18n="details.install">Installer</button>
           <button id="detailsForceCancelBtn" class="btn btn-outline danger" title="Forcer l'annulation" aria-label="Forcer l'annulation" hidden style="padding:6px 10px;">✕</button>
           <button id="detailsUninstallBtn" class="btn btn-outline" data-i18n="details.uninstall">Désinstaller</button>
+          <button id="installScopeBtn" class="btn btn-outline" type="button" hidden>👤 <span data-i18n="install.scope.user">User</span></button>
           <button id="sandboxOpenBtn" class="btn btn-soft-neutral sandbox-toggle-btn" type="button">
             <span data-i18n="sandbox.title">Sandbox</span>
             <span id="sandboxButtonStatus" class="sandbox-pill" data-status="unknown">—</span>

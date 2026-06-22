@@ -18,7 +18,8 @@ function createDocumentStub() {
   return {
     body: { classList: { toggle() {}, add() {}, remove() {} } },
     querySelectorAll() { return emptyArray; },
-    querySelector() { return null; }
+    querySelector() { return null; },
+    getElementById() { return null; }
   };
 }
 

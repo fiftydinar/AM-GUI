@@ -114,8 +114,13 @@
       const section = documentRef.createElement('div');
       section.className = 'installed-section';
       const title = documentRef.createElement('h4');
-      const key = sectionKey === 'sandboxed' ? 'installed.section.sandboxed' : 'installed.section.others';
-      title.textContent = t(key);
+      const keyMap = {
+        sandboxed: 'installed.section.sandboxed',
+        others: 'installed.section.others',
+        system: 'installed.section.system',
+        user: 'installed.section.user'
+      };
+      title.textContent = t(keyMap[sectionKey] || 'installed.section.others');
       section.appendChild(title);
       return section;
     }
@@ -125,6 +130,8 @@
         return buildInstalledSection(item.__section);
       }
       const { name, installed, desc } = typeof item === 'string' ? { name: item, installed: false, desc: null } : item;
+      const scope = item?.scope || null;
+      const appId = scope ? name + '|' + scope : name;
       const label = prettify ? prettify(name) : name.charAt(0).toUpperCase() + name.slice(1);
       const version = item?.version ? String(item.version) : null;
       const session = getActiveInstallSession() || {};
@@ -158,7 +165,7 @@
       }
       const tile = documentRef.createElement('div');
       tile.className = 'app-tile';
-      tile.setAttribute('data-app', name);
+      tile.setAttribute('data-app', appId);
       const badgeHTML = installed ? '<span class="installed-badge" aria-label="'+t('installed.badge')+'" title="'+t('installed.badge')+'" style="position:absolute;top:2px;right:2px;">✓</span>' : '';
       tile.innerHTML = `
         <div class="tile-icon" style="position:relative;display:inline-block;">
@@ -198,13 +205,13 @@
       tile.tabIndex = 0;
       tile.addEventListener('click', (ev) => {
         if (ev.target.closest('.inline-action')) return;
-        showDetails(name);
+        showDetails(appId);
       });
       tile.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') {
           if (ev.target.closest('.inline-action')) return;
           ev.preventDefault();
-          showDetails(name);
+          showDetails(appId);
         }
       });
       return tile;

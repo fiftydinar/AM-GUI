@@ -17,7 +17,11 @@
     if (state && state.activeCategory && state.activeCategory !== 'all') {
       const key = state.activeCategory.trim().toLowerCase();
       icon = iconMap[key] || '📦';
-      label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(state.activeCategory) : state.activeCategory;
+      if (key === 'autre') {
+        label = translate('categories.other');
+      } else {
+        label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(state.activeCategory) : state.activeCategory;
+      }
     } else {
       icon = '🗃️';
       label = translate('categories.all');
@@ -42,6 +46,7 @@
     const translate = typeof options.t === 'function' ? options.t : (key) => key;
     const showToast = typeof options.showToast === 'function' ? options.showToast : null;
     const setAppList = typeof options.setAppList === 'function' ? options.setAppList : () => {};
+    const applySearch = typeof options.applySearch === 'function' ? options.applySearch : null;
     const loadApps = typeof options.loadApps === 'function' ? options.loadApps : null;
     const appDetailsSection = options.appDetailsSection || null;
     const appsDiv = options.appsDiv || null;
@@ -55,6 +60,25 @@
     const ensureAppList = (apps) => Array.isArray(apps)
       ? apps.filter(item => !!item)
       : [];
+
+    const buildAllAlphabetical = (apps) => {
+      const source = Array.isArray(apps) ? apps : [];
+      const byName = new Map();
+      source.forEach(app => {
+        if (!app || !app.name) return;
+        const key = String(app.name).toLowerCase();
+        if (!byName.has(key)) byName.set(key, app);
+      });
+      return Array.from(byName.values()).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
+    };
+
+    const renderAllApps = () => {
+      if (applySearch) {
+        applySearch();
+        return;
+      }
+      setAppList(buildAllAlphabetical(state.allApps));
+    };
 
     const setCategoryOverride = (label, apps) => {
       const list = ensureAppList(apps);
@@ -122,7 +146,6 @@
       categoriesDropdownBtn.setAttribute('aria-expanded', 'false');
       categoriesDropdownBtn.classList.remove('active');
       if (categoriesDropdownOverlay) categoriesDropdownOverlay.hidden = true;
-      if (categoryBackBtn) categoryBackBtn.hidden = true;
     }
 
     function openCategoriesDropdown() {
@@ -143,30 +166,12 @@
     }
 
     document.addEventListener('click', (event) => {
-      if (!categoriesDropdownMenu.hidden && !categoriesDropdownMenu.contains(event.target) && event.target !== categoriesDropdownBtn && !event.target.closest('.category-back-btn')) {
+      if (!categoriesDropdownMenu.hidden && !categoriesDropdownMenu.contains(event.target) && event.target !== categoriesDropdownBtn) {
         closeCategoriesDropdown();
       }
     });
 
     cacheApi.load({ showToast });
-
-    const categoryBackBtn = document.getElementById('categoryBackBtn');
-    if (categoryBackBtn) {
-      categoryBackBtn.textContent = translate('details.back');
-      categoryBackBtn.addEventListener('click', (e) => {
-        e.stopPropagation();
-        closeCategoriesDropdown();
-        clearCategoryOverride();
-        state.activeCategory = 'all';
-        updateLabel();
-        const tabAll = document.querySelector('.tab[data-category="all"]');
-        if (tabAll) tabAll.click();
-        else {
-          resetToAppsView();
-          setAppList(state.allApps || []);
-        }
-      });
-    }
 
     const tabSecondary = document.querySelector('.tab-secondary');
     if (tabSecondary) {
@@ -178,7 +183,29 @@
         if (appsDiv) appsDiv.hidden = false;
         state.currentDetailsApp = null;
         categoriesDropdownMenu.innerHTML = '';
-        if (categoryBackBtn) categoryBackBtn.hidden = false;
+
+        // "All" option at the top
+        const btnAll = createCategoryButton('all', () => {
+          closeCategoriesDropdown();
+          clearCategoryOverride();
+          state.activeCategory = 'all';
+          updateLabel();
+          resetToAppsView();
+          if (!Array.isArray(state.allApps) || state.allApps.length === 0) {
+            setAppList([]);
+            if (showToast) showToast(translate('categories.loading'));
+            if (loadApps) { (async () => { await loadApps(); })(); }
+          }
+          if (Array.isArray(state.allApps) && state.allApps.length > 0) {
+            renderAllApps();
+            if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
+          }
+        }, iconMap);
+        btnAll.querySelector('span:last-child').textContent = translate('categories.all');
+        btnAll.querySelector('.cat-icon').textContent = '🗃️';
+        if (state.activeCategory === 'all') btnAll.classList.add('active');
+        categoriesDropdownMenu.appendChild(btnAll);
+
         const categories = await cacheApi.load({ showToast });
         categories.forEach(({ name, apps }) => {
           const btn = createCategoryButton(name, () => {
@@ -197,15 +224,16 @@
               apps: detailedApps,
               toastMessage: translate('categories.appCount', { label: name, count: filteredApps.length })
             });
-            // notify other parts (renderer) that a custom category was activated so they can refresh UI such as featured
             try { document.dispatchEvent(new CustomEvent('category.override', { detail: { name, count: detailedApps.length } })); } catch(_) {}
           }, iconMap);
+          if (state.activeCategory === name) btn.classList.add('active');
           categoriesDropdownMenu.appendChild(btn);
         });
         const btnOther = createCategoryButton('autre', () => {}, iconMap);
         btnOther.querySelector('span:last-child').textContent = translate('categories.other');
         btnOther.disabled = true;
         btnOther.innerHTML += ' <span class="cat-spinner" style="margin-left:8px;font-size:0.9em;">⏳</span>';
+        if (state.activeCategory === 'autre') btnOther.classList.add('active');
         categoriesDropdownMenu.appendChild(btnOther);
         setTimeout(() => {
           const allCategorizedNames = new Set();
@@ -230,9 +258,6 @@
         }, 0);
       });
     }
-
-    const tabApplications = document.querySelector('.tab[data-category="all"]');
-    if (tabApplications) tabApplications.click();
 
     function updateDropdownCategoriesVisibility() {
       const activeTab = document.querySelector('.tab.active');
@@ -277,7 +302,7 @@
             if (loadApps) await loadApps();
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
-            setAppList(state.allApps);
+            renderAllApps();
             if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
           } else if (showToast) {
             showToast(translate('categories.noneFound'));

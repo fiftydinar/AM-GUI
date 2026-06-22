@@ -470,7 +470,7 @@ ipcMain.handle('open-external', async (_event, url) => {
 
 
 // Generic action: install / uninstall / update (simple)
-ipcMain.handle('am-action', async (event, action, software) => {
+ipcMain.handle('am-action', async (event, action, software, scope) => {
   const pm = await detectPackageManager();
   if (!pm) return tErr('errNoPm', "No 'am' or 'appman' package manager found");
 
@@ -497,7 +497,9 @@ ipcMain.handle('am-action', async (event, action, software) => {
 
   // For install/uninstall, use node-pty for password management
   let args;
-  if (action === 'install') args = ['-i', software];
+  if (action === 'install') {
+    args = scope === 'user' ? ['-i', '--user', software] : ['-i', software];
+  }
   else if (action === 'uninstall') args = ['-R', software];
   else return tErr('errUnknownAction', 'Unknown action: {action}', { action });
 
@@ -519,6 +521,7 @@ ipcMain.handle('am-action', async (event, action, software) => {
       });
       let output = '';
       let done = false;
+      let pathChoiceSent = false;
       const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
       // Handle sudo password prompt
       passwordWaiters.set(id, (password) => {
@@ -534,6 +537,22 @@ ipcMain.handle('am-action', async (event, action, software) => {
           // Request the password from the renderer via IPC
           if (event.sender) event.sender.send('password-prompt', { id });
         }
+        // Auto-select path when am detects multiple install locations
+        if (!pathChoiceSent && output.includes('1.') && output.includes('2.')) {
+          const pathOptions = (output.match(/\d+\.\s+\/\S+/g) || []);
+          if (pathOptions.length >= 2) {
+            let choice = '1';
+            for (const pl of pathOptions) {
+              const numMatch = pl.match(/^(\d+)\.\s+(\/\S+)/);
+              if (!numMatch) continue;
+              const isSystemPath = numMatch[2].startsWith('/opt');
+              if (scope === 'user' && !isSystemPath) { choice = numMatch[1]; break; }
+              if (scope !== 'user' && isSystemPath) { choice = numMatch[1]; break; }
+            }
+            pathChoiceSent = true;
+            setTimeout(() => { try { child.write(choice + '\n'); } catch(_) {} }, 200);
+          }
+        }
       });
       child.onExit((evt) => {
         if (done) return;
@@ -546,8 +565,22 @@ ipcMain.handle('am-action', async (event, action, software) => {
         done = true;
         passwordWaiters.delete(id);
         invalidatePackageManagerCache();
-        resolve(err?.message || tErr('errUnknown', 'Unknown error'));
+        // EIO often means the process exited normally during cleanup — treat as success
+        if (err && err.message && err.message.includes('EIO')) {
+          resolve(output || 'done');
+        } else {
+          resolve(err?.message || tErr('errUnknown', 'Unknown error'));
+        }
       });
+      // Safety timeout: kill the process after 30 seconds if it hasn't exited
+      setTimeout(() => {
+        if (!done) {
+          done = true;
+          passwordWaiters.delete(id);
+          try { child.kill('SIGKILL'); } catch(_) {}
+          resolve(output || 'done');
+        }
+      }, 30000);
     } catch (e) {
       invalidatePackageManagerCache();
       return resolve(e && e.message ? e.message : String(e));
@@ -571,11 +604,12 @@ ipcMain.on('password-response', (event, payload) => {
     passwordWaiters.delete(payload.id);
   }
 });
-ipcMain.handle('install-start', async (event, name) => {
+ipcMain.handle('install-start', async (event, name, scope) => {
   console.log('IPC install-start reçu pour', name);
   const pm = await detectPackageManager();
   // Log le lancement du processus
-  console.log('Process started:', pm, ['-i', name]);
+  const installArgs = scope === 'user' ? ['-i', '--user', name] : ['-i', name];
+  console.log('Process started:', pm, installArgs);
   if (!pm) return { error: tErr('errNoPm', "No 'am' or 'appman' package manager found") };
   if (!name || typeof name !== 'string') return { error: tErr('errInvalidName', 'Invalid name') };
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
@@ -593,7 +627,7 @@ ipcMain.handle('install-start', async (event, name) => {
   });
   let child;
   try {
-    child = pty.spawn(pm, ['-i', name], {
+    child = pty.spawn(pm, installArgs, {
       name: 'xterm-color',
       cols: 80,
       rows: 30,
@@ -869,7 +903,11 @@ ipcMain.handle('list-apps-detailed', async () => {
   });
   return new Promise(async (resolve) => {
     try {
-      const [listRes, instRes] = await Promise.all([execPromise(listCmd), execPromise(installedCmd)]);
+      // Run sequentially — not in parallel — because both `am -l` and `am -f`
+      // share the same $AMCACHEDIR/version-args cache file. Running them
+      // concurrently causes one to delete the cache while the other reads it.
+      const listRes = await execPromise(listCmd);
+      const instRes = await execPromise(installedCmd);
       if ((listRes.err && listRes.err.code === 127) || (instRes.err && instRes.err.code === 127)) {
         invalidatePackageManagerCache();
       }
@@ -880,8 +918,10 @@ ipcMain.handle('list-apps-detailed', async () => {
       const catalogSet = new Set();
       const catalogDesc = new Map();
       const installedFromCatalog = new Set();
-      const installedSet = new Set();
+      const installedEntries = []; // {name, scope, version} — allows same name in multiple scopes
+      const installedNameSet = new Set(); // unique installed names (for fallback/catalog dedup)
       const installedDesc = new Map();
+      const installedScope = new Map(); // name → 'system' | 'user' (last scope seen, for fallback)
   const diamondSet = new Set(); // apps that were listed with leading '◆' in catalog output
 
       // Parse catalog from -l output. Instead of relying on any fixed
@@ -966,20 +1006,43 @@ ipcMain.handle('list-apps-detailed', async () => {
       //   - -------    | -------  | ----     | ----
       //   ◆ opencode   | 1.17.7 ✓ | appimage | 161 MiB
       //
+      // When `am` is the PM, the output has TWO sections:
+      //   System section: title contains "AM" (not "APPMAN"), data rows have 5 cols (NAME|DB|VERSION|TYPE|SIZE)
+      //   User section:   title contains "APPMAN", data rows have 4 cols (NAME|VERSION|TYPE|SIZE)
+      // The section titles always contain the PM name in quotes (locale-independent).
+      //
       // Strategy: detect the header line structurally (a line starting with
       // "- " that contains "|" separators), skip the separator row after it,
-      // then only process diamond-prefixed data rows. This is completely
-      // locale-independent.
+      // then only process diamond-prefixed data rows. Track section scope
+      // by detecting title lines that precede table headers.
       try {
         const lines = (instRes.stdout || '').split('\n');
+        const seenInstalled = new Set();
         let headerParsed = false;
+        let currentScope = null;
         for (const raw of lines) {
           let line = raw.trim();
           if (!line) continue;
-          if (line.startsWith('-------')) continue;
+          // Reset on long separator lines (section boundary)
+          if (/^-{10,}$/.test(line) || /^={10,}$/.test(line)) {
+            headerParsed = false;
+            continue;
+          }
+          // Detect section title: a line that contains quoted PM name.
+          // Title lines contain "APPMAN" or "AM" in quotes (Unicode \u201c\u201d or ASCII ").
+          if (line.includes('"APPMAN"') || line.includes('\u201cAPPMAN\u201d')) {
+            currentScope = 'user';
+            continue;
+          }
+          if (line.includes('"AM"') || line.includes('\u201cAM\u201d')) {
+            // Only match standalone "AM", not "APPMAN" (already handled above)
+            if (!line.includes('APPMAN')) currentScope = 'system';
+            continue;
+          }
           // Detect header structurally: starts with "- " and contains "|"
           if (!headerParsed && line.startsWith('- ') && line.includes('|')) {
             headerParsed = true;
+            if (!currentScope) currentScope = 'system';
             continue;
           }
           if (!headerParsed) continue; // skip everything before the header
@@ -988,16 +1051,27 @@ ipcMain.handle('list-apps-detailed', async () => {
           else continue; // skip summary lines, footers, blank lines
           if (!line) continue;
           if (line.includes('|')) {
-            const cols = line.split('|').map(s => s.trim()).filter(Boolean);
+            const rawCols = line.split('|').map(s => s.trim());
+            // Strip trailing empty columns (from trailing pipes) but keep
+            // empty middle columns so 5-col rows don't collapse to 4.
+            while (rawCols.length > 1 && rawCols[rawCols.length - 1] === '') rawCols.pop();
+            const cols = rawCols;
             const name = cols[0] ? cols[0].split(/\s+/)[0].trim().replace(/\*+$/, '') : null;
-            // Version column is always the 3rd from the end (last two are TYPE and SIZE).
-            // This handles both 4-col (APPNAME|VERSION|TYPE|SIZE) and
-            // 5-col (APPNAME|DB|VERSION|TYPE|SIZE) formats from appman.
-            const versionColIdx = Math.max(1, cols.length - 3);
+            // VERSION is at index 2 in the 5-col format (NAME|DB|VERSION|TYPE|SIZE).
+            // When the terminal wraps a long row, only 3 columns survive on the
+            // first line (NAME|DB|VERSION) — the version is still at index 2.
+            // In the rare 4-col format (NAME|VERSION|TYPE|SIZE) it is at index 1.
+            const versionColIdx = (cols.length === 4) ? 1 : 2;
             const version = (versionColIdx >= 0 && versionColIdx < cols.length) ? cols[versionColIdx] : null;
             if (name) {
-              installedSet.add(name);
+              const entryKey = (currentScope || '') + ':' + name;
+              if (!seenInstalled.has(entryKey)) {
+                seenInstalled.add(entryKey);
+                installedEntries.push({ name, scope: currentScope || null, version: version || null });
+                installedNameSet.add(name);
+              }
               if (version) installedDesc.set(name, version);
+              if (currentScope) installedScope.set(name, currentScope);
             }
           }
         }
@@ -1007,13 +1081,18 @@ ipcMain.handle('list-apps-detailed', async () => {
 
       // if -f output looks broken (empty or contains every catalog entry),
       // fall back on the subset gathered from the catalog parsing.
-      if ((installedSet.size === 0 && installedFromCatalog.size > 0) ||
-          (catalogSet.size > 0 && installedSet.size >= catalogSet.size)) {
+      if ((installedEntries.length === 0 && installedFromCatalog.size > 0) ||
+          (catalogSet.size > 0 && installedEntries.length >= catalogSet.size)) {
         if (installedFromCatalog.size > 0 && installedFromCatalog.size < catalogSet.size) {
-          installedSet.clear();
-          for (const n of installedFromCatalog) installedSet.add(n);
+          installedEntries.length = 0;
+          installedNameSet.clear();
+          for (const n of installedFromCatalog) {
+            installedEntries.push({ name: n, scope: null, version: installedDesc.get(n) || null });
+            installedNameSet.add(n);
+          }
         }
       }
+
 
       // Build bundle-child map: apps whose description says
       // "This script installs the full 'X' suite" are children of X.
@@ -1025,26 +1104,51 @@ ipcMain.handle('list-apps-detailed', async () => {
         if (m) bundleChildOf[name] = m[1].toLowerCase();
       }
 
-      const allSet = new Set([...catalogSet, ...installedSet]);
-      const all = Array.from(allSet)
-        .filter(name => name.toLowerCase() !== 'am')
-        .map(name => ({
-          name,
-          installed: installedSet.has(name),
-          hasDiamond: diamondSet.has(name),
-          version: installedDesc.get(name) || null,
-          desc: catalogDesc.get(name) || null
-        }));
-      const installed = Array.from(installedSet)
-        .filter(name => name.toLowerCase() !== 'am')
-        .map(name => ({
-          name,
+      // Build all array: installed entries (one per scope) + catalog-only entries (one per name)
+      const all = [];
+      const allSeen = new Set(); // track name+scope to avoid duplicates
+      // Installed entries (one per scope — same app can appear in both system and user)
+      for (const entry of installedEntries) {
+        if (entry.name.toLowerCase() === 'am') continue;
+        const key = (entry.scope || '') + ':' + entry.name;
+        if (allSeen.has(key)) continue;
+        allSeen.add(key);
+        all.push({
+          name: entry.name,
           installed: true,
-          hasDiamond: diamondSet.has(name),
-          version: installedDesc.get(name) || null,
-          desc: catalogDesc.get(name) || null
+          hasDiamond: diamondSet.has(entry.name),
+          version: entry.version || null,
+          desc: catalogDesc.get(entry.name) || null,
+          scope: entry.scope || null
+        });
+      }
+      // Catalog-only entries (not installed in any scope)
+      for (const name of catalogSet) {
+        if (name.toLowerCase() === 'am') continue;
+        if (installedNameSet.has(name)) continue; // already added as installed entry
+        if (!allSeen.has(name)) {
+          allSeen.add(name);
+          all.push({
+            name,
+            installed: false,
+            hasDiamond: diamondSet.has(name),
+            version: null,
+            desc: catalogDesc.get(name) || null,
+            scope: null
+          });
+        }
+      }
+      const installed = installedEntries
+        .filter(e => e.name.toLowerCase() !== 'am')
+        .map(entry => ({
+          name: entry.name,
+          installed: true,
+          hasDiamond: diamondSet.has(entry.name),
+          version: entry.version || null,
+          desc: catalogDesc.get(entry.name) || null,
+          scope: entry.scope || null
         }));
-      return resolve({ installed, all, pmFound: true, bundleChildOf });
+      return resolve({ installed, all, pmFound: true, pmName: pm, bundleChildOf });
     } catch (e) {
       return resolve({ installed: [], all: [], pmFound: true, error: tErr('errInternalParsing', 'Internal parsing error.') });
     }
@@ -1166,3 +1270,6 @@ ipcMain.handle('set-tray-locale', (_event, locale) => {
   if (locale && locale !== 'auto') currentLocale = locale;
   setLocale(locale);
 });
+
+
+
