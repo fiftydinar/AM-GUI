@@ -189,6 +189,7 @@
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
             setAppList(state.allApps);
+            if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
           }
         }, iconMap);
         btnAll.querySelector('span:last-child').textContent = translate('categories.all');
