@@ -343,6 +343,7 @@
         if (!confirmed) return;
         detailsUninstallBtn.classList.add('loading');
         detailsUninstallBtn.disabled = true;
+        showToast(t('toast.uninstalling', { name }));
         try {
           await window.electronAPI.amAction('uninstall', name, scope);
         } catch (_) {}
