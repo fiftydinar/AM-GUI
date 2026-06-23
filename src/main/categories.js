@@ -4,9 +4,6 @@ const fs = require('fs');
 const fsp = fs.promises;
 const undici = require('undici');
 
-const projectRoot = path.resolve(__dirname, '..', '..');
-const categoriesCachePath = path.join(projectRoot, 'categories-cache.json');
-const categoriesMetaPath = path.join(projectRoot, 'categories-cache.meta.json');
 const MAX_CATEGORY_FETCH_CONCURRENCY = 6;
 
 async function readJsonSafe(filePath, fallback) {
@@ -77,8 +74,10 @@ function parseApps(markdown) {
   return apps;
 }
 
-function registerCategoryHandlers(ipcMain) {
+function registerCategoryHandlers(ipcMain, cacheDir) {
   if (!ipcMain) throw new Error('ipcMain instance is required');
+  const categoriesCachePath = path.join(cacheDir, 'categories-cache.json');
+  const categoriesMetaPath = path.join(cacheDir, 'categories-cache.meta.json');
 
   ipcMain.handle('delete-categories-cache', async () => {
     try {

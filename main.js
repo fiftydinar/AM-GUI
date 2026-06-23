@@ -24,7 +24,7 @@ const SANDBOX_DIR_KEYS = ['desktop', 'documents', 'downloads', 'games', 'music',
 const SANDBOX_MARKER = 'aisap-am sandboxing script';
 
 const iconCacheManager = createIconCacheManager(app);
-registerCategoryHandlers(ipcMain);
+registerCategoryHandlers(ipcMain, app.getPath('userData'));
 
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
