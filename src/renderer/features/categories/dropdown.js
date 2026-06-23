@@ -198,7 +198,8 @@
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
             renderAllApps();
-            if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
+            const uniqueCount = new Set(state.allApps.map(a => String(a.name).toLowerCase())).size;
+            if (showToast) showToast(translate('categories.allAppsCount', { count: uniqueCount }));
           }
         }, iconMap);
         btnAll.querySelector('span:last-child').textContent = translate('categories.all');
@@ -311,7 +312,8 @@
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
             renderAllApps();
-            if (showToast) showToast(translate('categories.allAppsCount', { count: state.allApps.length }));
+            const uniqueCount = new Set(state.allApps.map(a => String(a.name).toLowerCase())).size;
+            if (showToast) showToast(translate('categories.allAppsCount', { count: uniqueCount }));
           } else if (showToast) {
             showToast(translate('categories.noneFound'));
           }

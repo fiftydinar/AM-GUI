@@ -2199,7 +2199,8 @@ window.addEventListener('DOMContentLoaded', async () => {
       showDetails(last);
     }
     if (state.allApps && state.allApps.length > 0) {
-      showToast(t('categories.allAppsCount', { count: state.allApps.length }));
+      const uniqueCount = new Set(state.allApps.map(a => String(a.name).toLowerCase())).size;
+      showToast(t('categories.allAppsCount', { count: uniqueCount }));
     }
   } catch (err) {
     console.error('Erreur initialisation DOM', err);
