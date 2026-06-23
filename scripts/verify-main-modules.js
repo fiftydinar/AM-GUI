@@ -34,8 +34,8 @@ let categoriesBackup = null;
   };
 
   const repoRoot = path.resolve(__dirname, '..');
-  const categoriesCachePath = path.join(repoRoot, 'categories-cache.json');
-  const categoriesMetaPath = path.join(repoRoot, 'categories-cache.meta.json');
+  let categoriesTempDir = null;
+  let categoriesCachePath, categoriesMetaPath;
 
   function snapshotCategoriesFiles() {
     return {
@@ -173,7 +173,10 @@ let categoriesBackup = null;
       }
     };
 
-    registerCategoryHandlers(ipcMain);
+    categoriesTempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'am-gui-cat-test-'));
+    categoriesCachePath = path.join(categoriesTempDir, 'categories-cache.json');
+    categoriesMetaPath = path.join(categoriesTempDir, 'categories-cache.meta.json');
+    registerCategoryHandlers(ipcMain, categoriesTempDir);
     if (!ipcHandlers.has('fetch-all-categories')) throw new Error('fetch-all-categories handler missing');
 
     const firstFetch = await ipcHandlers.get('fetch-all-categories')();
@@ -213,6 +216,9 @@ let categoriesBackup = null;
     childProcess.exec = originalExec;
     undici.fetch = originalFetch;
     restoreCategoriesFiles(categoriesBackup);
+    if (categoriesTempDir && fs.existsSync(categoriesTempDir)) {
+      fs.rmSync(categoriesTempDir, { recursive: true, force: true });
+    }
     if (success) {
       process.exitCode = 0;
     }

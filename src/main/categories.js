@@ -29,14 +29,6 @@ async function writeJsonSafe(filePath, data) {
   await fsp.rename(tmpPath, filePath);
 }
 
-async function updateCategoriesCache(categories) {
-  try {
-    await writeJsonSafe(categoriesCachePath, categories);
-  } catch (e) {
-    console.error('Error writing categories cache:', e);
-  }
-}
-
 async function mapWithConcurrency(limit, items, iteratorFn) {
   if (!Array.isArray(items) || !items.length) return [];
   const maxWorkers = Math.max(1, Number(limit) || 1);
@@ -78,6 +70,14 @@ function registerCategoryHandlers(ipcMain, cacheDir) {
   if (!ipcMain) throw new Error('ipcMain instance is required');
   const categoriesCachePath = path.join(cacheDir, 'categories-cache.json');
   const categoriesMetaPath = path.join(cacheDir, 'categories-cache.meta.json');
+
+  async function updateCategoriesCache(categories) {
+    try {
+      await writeJsonSafe(categoriesCachePath, categories);
+    } catch (e) {
+      console.error('Error writing categories cache:', e);
+    }
+  }
 
   ipcMain.handle('delete-categories-cache', async () => {
     try {
