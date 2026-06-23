@@ -17,7 +17,11 @@
     if (state && state.activeCategory && state.activeCategory !== 'all') {
       const key = state.activeCategory.trim().toLowerCase();
       icon = iconMap[key] || '📦';
-      label = state.activeCategory.charAt(0).toUpperCase() + state.activeCategory.slice(1);
+      if (key === 'autre') {
+        label = translate('categories.other');
+      } else {
+        label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(state.activeCategory) : state.activeCategory;
+      }
     } else {
       icon = '🗃️';
       label = translate('categories.all');
@@ -31,7 +35,8 @@
     btn.className = 'category-btn';
     const key = name.trim().toLowerCase();
     const icon = iconMap[key] || '📦';
-    btn.innerHTML = `<span class="cat-icon">${icon}</span> <span>${name.charAt(0).toUpperCase() + name.slice(1)}</span>`;
+    const displayName = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(name) : name;
+    btn.innerHTML = `<span class="cat-icon">${icon}</span> <span>${displayName}</span>`;
     btn.onclick = onClick;
     return btn;
   }
@@ -41,6 +46,7 @@
     const translate = typeof options.t === 'function' ? options.t : (key) => key;
     const showToast = typeof options.showToast === 'function' ? options.showToast : null;
     const setAppList = typeof options.setAppList === 'function' ? options.setAppList : () => {};
+    const applySearch = typeof options.applySearch === 'function' ? options.applySearch : null;
     const loadApps = typeof options.loadApps === 'function' ? options.loadApps : null;
     const appDetailsSection = options.appDetailsSection || null;
     const appsDiv = options.appsDiv || null;
@@ -54,6 +60,25 @@
     const ensureAppList = (apps) => Array.isArray(apps)
       ? apps.filter(item => !!item)
       : [];
+
+    const buildAllAlphabetical = (apps) => {
+      const source = Array.isArray(apps) ? apps : [];
+      const byName = new Map();
+      source.forEach(app => {
+        if (!app || !app.name) return;
+        const key = String(app.name).toLowerCase();
+        if (!byName.has(key)) byName.set(key, app);
+      });
+      return Array.from(byName.values()).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
+    };
+
+    const renderAllApps = () => {
+      if (applySearch) {
+        applySearch();
+        return;
+      }
+      setAppList(buildAllAlphabetical(state.allApps));
+    };
 
     const setCategoryOverride = (label, apps) => {
       const list = ensureAppList(apps);
@@ -88,7 +113,7 @@
         const count = list.length;
         const message = typeof toastMessage === 'string'
           ? toastMessage
-          : `Catégorie "${label}" : ${count} apps`;
+          : translate('categories.appCount', { label, count });
         showToast(message);
       }
     };
@@ -146,12 +171,6 @@
       }
     });
 
-    document.querySelectorAll('.tab[data-category]').forEach(tab => {
-      tab.addEventListener('click', () => {
-        closeCategoriesDropdown();
-      });
-    });
-
     cacheApi.load({ showToast });
 
     const tabSecondary = document.querySelector('.tab-secondary');
@@ -164,13 +183,41 @@
         if (appsDiv) appsDiv.hidden = false;
         state.currentDetailsApp = null;
         categoriesDropdownMenu.innerHTML = '';
+
+        // "All" option at the top
+        const btnAll = createCategoryButton('all', () => {
+          closeCategoriesDropdown();
+          clearCategoryOverride();
+          state.activeCategory = 'all';
+          updateLabel();
+          resetToAppsView();
+          if (!Array.isArray(state.allApps) || state.allApps.length === 0) {
+            setAppList([]);
+            if (showToast) showToast(translate('categories.loading'));
+            if (loadApps) { (async () => { await loadApps(); })(); }
+          }
+          if (Array.isArray(state.allApps) && state.allApps.length > 0) {
+            renderAllApps();
+            const uniqueCount = new Set(state.allApps.map(a => String(a.name).toLowerCase())).size;
+            if (showToast) showToast(translate('categories.allAppsCount', { count: uniqueCount }));
+          }
+        }, iconMap);
+        btnAll.querySelector('span:last-child').textContent = translate('categories.all');
+        btnAll.querySelector('.cat-icon').textContent = '🗃️';
+        if (state.activeCategory === 'all') btnAll.classList.add('active');
+        categoriesDropdownMenu.appendChild(btnAll);
+
         const categories = await cacheApi.load({ showToast });
         categories.forEach(({ name, apps }) => {
           const btn = createCategoryButton(name, () => {
-            closeCategoriesDropdown();
             const filteredApps = Array.isArray(apps)
               ? apps.filter(appName => typeof appName === 'string' && appName.trim().length > 0)
               : [];
+            if (filteredApps.length === 0) {
+              if (showToast) showToast(translate('categories.empty', { category: name }));
+              return;
+            }
+            closeCategoriesDropdown();
             const detailedApps = filteredApps.map(appName => {
               const found = Array.isArray(state.allApps)
                 ? state.allApps.find(candidate => candidate && normalizeName(candidate.name) === normalizeName(appName))
@@ -180,16 +227,18 @@
             activateCustomCategory({
               label: name,
               apps: detailedApps,
-              toastMessage: `Catégorie "${name}" : ${filteredApps.length} apps`
+              toastMessage: translate('categories.appCount', { label: name, count: filteredApps.length })
             });
-            // notify other parts (renderer) that a custom category was activated so they can refresh UI such as featured
             try { document.dispatchEvent(new CustomEvent('category.override', { detail: { name, count: detailedApps.length } })); } catch(_) {}
           }, iconMap);
+          if (state.activeCategory === name) btn.classList.add('active');
           categoriesDropdownMenu.appendChild(btn);
         });
-        const btnOther = createCategoryButton('Autre', () => {}, iconMap);
+        const btnOther = createCategoryButton('autre', () => {}, iconMap);
+        btnOther.querySelector('span:last-child').textContent = translate('categories.other');
         btnOther.disabled = true;
         btnOther.innerHTML += ' <span class="cat-spinner" style="margin-left:8px;font-size:0.9em;">⏳</span>';
+        if (state.activeCategory === 'autre') btnOther.classList.add('active');
         categoriesDropdownMenu.appendChild(btnOther);
         setTimeout(() => {
           const allCategorizedNames = new Set();
@@ -201,22 +250,23 @@
           const uncategorizedApps = Array.isArray(state.allApps)
             ? state.allApps.filter(app => app && !allCategorizedNames.has(normalizeName(app.name)))
             : [];
-          btnOther.disabled = uncategorizedApps.length === 0;
           btnOther.querySelector('.cat-spinner')?.remove();
+          btnOther.disabled = false;
           btnOther.onclick = () => {
+            if (uncategorizedApps.length === 0) {
+              if (showToast) showToast(translate('categories.empty', { category: translate('categories.other') }));
+              return;
+            }
             closeCategoriesDropdown();
             activateCustomCategory({
               label: 'autre',
               apps: uncategorizedApps,
-              toastMessage: `Autres applications : ${uncategorizedApps.length}`
+              toastMessage: translate('categories.otherAppsCount', { count: uncategorizedApps.length })
             });
           };
         }, 0);
       });
     }
-
-    const tabApplications = document.querySelector('.tab[data-category="all"]');
-    if (tabApplications) tabApplications.click();
 
     function updateDropdownCategoriesVisibility() {
       const activeTab = document.querySelector('.tab.active');
@@ -257,14 +307,15 @@
           resetToAppsView();
           if (!Array.isArray(state.allApps) || state.allApps.length === 0) {
             setAppList([]);
-            if (showToast) showToast('Chargement des applications…');
+            if (showToast) showToast(translate('categories.loading'));
             if (loadApps) await loadApps();
           }
           if (Array.isArray(state.allApps) && state.allApps.length > 0) {
-            setAppList(state.allApps);
-            if (showToast) showToast(`Toutes les applications : ${state.allApps.length}`);
+            renderAllApps();
+            const uniqueCount = new Set(state.allApps.map(a => String(a.name).toLowerCase())).size;
+            if (showToast) showToast(translate('categories.allAppsCount', { count: uniqueCount }));
           } else if (showToast) {
-            showToast('Aucune application trouvée.');
+            showToast(translate('categories.noneFound'));
           }
         }
       });

@@ -1,7 +1,7 @@
-// Fixe les variables d'environnement terminal si absentes (utile pour AppImage)
+// Set terminal environment variables if missing (useful for AppImage)
 if (!process.env.TERM) process.env.TERM = 'xterm-256color';
 if (!process.env.COLORTERM) process.env.COLORTERM = 'truecolor';
-// Ajoute XDG_BIN_HOME au PATH si absent
+// Add XDG_BIN_HOME to PATH if missing
 const xdgBinHome = process.env.XDG_BIN_HOME || (process.env.HOME ? `${process.env.HOME}/.local/bin` : null);
 if (xdgBinHome && !process.env.PATH.split(':').includes(xdgBinHome)) {
   process.env.PATH = `${process.env.PATH}:${xdgBinHome}`;
@@ -13,7 +13,8 @@ const fs = require('fs');
 const os = require('os');
 const { exec, spawn } = require('child_process');
 const { registerCategoryHandlers } = require('./src/main/categories');
-const { initTray, destroyTray } = require('./src/main/tray');
+const { initTray, destroyTray, setTrayLocale } = require('./src/main/tray');
+const { getContextMenuLabels, tErr, setLocale } = require('./src/main/trayI18n');
 const { detectPackageManager, invalidatePackageManagerCache } = require('./src/main/packageManager');
 const { createIconCacheManager } = require('./src/main/iconCache');
 const { installAppManAuto } = require('./src/main/appManAuto');
@@ -23,7 +24,7 @@ const SANDBOX_DIR_KEYS = ['desktop', 'documents', 'downloads', 'games', 'music',
 const SANDBOX_MARKER = 'aisap-am sandboxing script';
 
 const iconCacheManager = createIconCacheManager(app);
-registerCategoryHandlers(ipcMain);
+registerCategoryHandlers(ipcMain, app.getPath('userData'));
 
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
@@ -32,12 +33,12 @@ if (!gotTheLock) {
   process.exit(0);
 } else {
   app.on('second-instance', (event, commandLine, workingDirectory) => {
-    // Quelqu'un a essayé de lancer une deuxième instance, on focus la fenêtre existante
+    // Someone tried to launch a second instance, focus the existing window
     if (mainWindow) {
       if (mainWindow.isMinimized()) mainWindow.restore();
       mainWindow.show();
       mainWindow.focus();
-      // Forcer au premier plan temporairement
+      // Force to foreground temporarily
       mainWindow.setAlwaysOnTop(true);
       setTimeout(() => {
         if (mainWindow) mainWindow.setAlwaysOnTop(false);
@@ -46,8 +47,8 @@ if (!gotTheLock) {
   });
 }
 
-// --- Gestion accélération GPU (doit être AVANT app.whenReady) ---
-// Vérifier d'abord les arguments de ligne de commande
+// --- GPU acceleration management (must be BEFORE app.whenReady) ---
+// Check command-line arguments first
 const hasDisableGpuFlag = process.argv.includes('--disable-gpu');
 
 let disableGpuPref = false;
@@ -66,14 +67,14 @@ try {
   console.log('[GPU DEBUG] Error reading GPU pref:', e);
 }
 
-// Désactiver GPU si demandé par flag CLI ou par préférence
+// Disable GPU if requested by CLI flag or preference
 const shouldDisableGpu = hasDisableGpuFlag || disableGpuPref;
 if (shouldDisableGpu && typeof app.disableHardwareAcceleration === 'function') {
   console.log('[GPU DEBUG] Calling app.disableHardwareAcceleration() - reason:', hasDisableGpuFlag ? 'CLI flag' : 'user preference');
   app.disableHardwareAcceleration();
 } else {
   console.log('[GPU DEBUG] NOT calling app.disableHardwareAcceleration(), shouldDisable:', shouldDisableGpu, 'function exists:', typeof app.disableHardwareAcceleration === 'function');
-  // Supprimer les erreurs VSync bénignes quand le GPU est activé
+  // Suppress benign VSync errors when GPU is enabled
   app.commandLine.appendSwitch('disable-gpu-vsync');
   app.commandLine.appendSwitch('disable-frame-rate-limit');
 }
@@ -88,12 +89,13 @@ function logGlobalError(err) {
 
 process.on('uncaughtException', logGlobalError);
 process.on('unhandledRejection', logGlobalError);
-// Vérifier si app.setName ou équivalent existe et remplacer par 'AM-GUI' si besoin
+// Check if app.setName or equivalent exists and replace with 'AM-GUI' if needed
 if (app.setName) {
   app.setName('AM-GUI');
 }
 
 let mainWindow = null;
+let currentLocale = 'en';
 const activeInstalls = new Map();
 const activeUpdates = new Map();
 const passwordWaiters = new Map();
@@ -211,12 +213,12 @@ async function validateCustomSandboxPath(input) {
   if (!normalized) return { ok: true, value: '' };
   const forbidden = getForbiddenSandboxPaths();
   if (forbidden.has(path.normalize(normalized))) {
-    return { ok: false, error: 'forbidden-path' };
+    return { ok: false, error: tErr('errForbiddenPath', 'forbidden-path') };
   }
   try {
     await fsp.stat(normalized);
   } catch (_) {
-    return { ok: false, error: 'missing-path' };
+    return { ok: false, error: tErr('errMissingPath', 'missing-path') };
   }
   return { ok: true, value: normalized };
 }
@@ -257,7 +259,7 @@ function runSandboxTask(sender, { pm, action, args, stdinScript, appName }) {
       });
     } catch (err) {
       invalidatePackageManagerCache();
-      return resolve({ ok: false, error: err?.message || 'Unable to start sandbox command.', id });
+      return resolve({ ok: false, error: err?.message || tErr('errUnableStartSandbox', 'Unable to start sandbox command.'), id });
     }
     let settled = false;
     let output = '';
@@ -303,12 +305,12 @@ function runSandboxTask(sender, { pm, action, args, stdinScript, appName }) {
       const code = err?.code || '';
       // node-pty may emit EIO when the PTY closes normally; treat it as benign.
       if (code === 'EIO' || /EIO/.test(message)) {
-        send({ kind: 'debug', message: 'Sandbox PTY closed (EIO)' });
+        send({ kind: 'debug', message: tErr('errSandboxPtyClosed', 'Sandbox PTY closed (EIO)') });
         return;
       }
       invalidatePackageManagerCache();
-      send({ kind: 'error', message: message || 'Sandbox command failed.' });
-      finish({ ok: false, error: message || 'Sandbox command failed.', output, id });
+      send({ kind: 'error', message: message || tErr('errSandboxFailed', 'Sandbox command failed.') });
+      finish({ ok: false, error: message || tErr('errSandboxFailed', 'Sandbox command failed.'), output, id });
     });
     if (stdinScript) {
       setTimeout(() => {
@@ -319,7 +321,7 @@ function runSandboxTask(sender, { pm, action, args, stdinScript, appName }) {
   });
 }
 
-// IPC pour lire/écrire la préférence GPU
+// IPC to read/write GPU preference
 ipcMain.handle('get-gpu-pref', async () => {
   try {
     const prefPath = path.join(app.getPath('userData'), 'gpu-pref.json');
@@ -338,14 +340,14 @@ ipcMain.handle('set-gpu-pref', async (_event, val) => {
   } catch(e){ return { ok:false, error: e.message||String(e) }; }
 });
 
-// IPC pour redémarrer l'application (utilisé après changement GPU)
+// IPC to restart the application (used after GPU change)
 ipcMain.handle('restart-app', async () => {
   app.relaunch();
   app.quit();
 });
 
 function createWindow () {
-  // Détection simple de l'environnement de bureau pour stylage léger
+  // Simple desktop environment detection for light styling
   function detectDesktopEnv() {
     const env = process.env;
     const xdg = (env.XDG_CURRENT_DESKTOP || '').toLowerCase();
@@ -359,12 +361,12 @@ function createWindow () {
   }
   const deTag = detectDesktopEnv();
   const sysLocale = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || ((app.getLocale && typeof app.getLocale === 'function') ? app.getLocale() : 'en');
-  // Icône PNG
+  // PNG icon
   const iconPath = path.join(__dirname, 'AM-GUI.png');
   const win = new BrowserWindow({
     width: 1100,
     height: 750,
-    frame: false, // retour à la barre personnalisée
+    frame: false, // custom title bar
     title: 'AM-GUI',
     icon: iconPath,
     backgroundColor: '#f6f8fa',
@@ -375,64 +377,64 @@ function createWindow () {
     }
   });
 
-  // Supprimer la barre de menu par défaut (File, Edit, View, etc.)
+  // Remove the default menu bar (File, Edit, View, etc.)
   try { Menu.setApplicationMenu(null); } catch(_) {}
-  // Cacher la barre au cas où certaines plateformes la garderaient
+  // Hide the bar in case some platforms keep it
   win.setMenuBarVisibility(false);
 
   win.loadFile('index.html');
-  // Forcer un titre vide après affichage (on affiche le faux header)
+  // Force an empty title after display (custom header is shown)
   win.once('ready-to-show', () => {
-  // Le titre est déjà défini à la création, inutile de le modifier
+  // Title is already set at creation, no need to modify
   });
 
-  // Raccourci clavier manuel pour ouvrir DevTools (menu supprimé)
+  // Manual keyboard shortcut to open DevTools (menu removed)
   win.webContents.on('before-input-event', (event, input) => {
     if (input.control && input.shift && input.key && input.key.toLowerCase() === 'i') {
       win.webContents.openDevTools({ mode: 'detach' });
     }
   });
 
-  // Menu contextuel (clic droit) basique pour copier / coller
+  // Menu contextuel (clic droit)
   win.webContents.on('context-menu', (event, params) => {
+    const ctxLabels = getContextMenuLabels(currentLocale);
     const { selectionText, isEditable } = params;
     const hasSelection = selectionText && selectionText.trim().length > 0;
     const template = [];
 
     if (isEditable) {
       template.push(
-        { role: 'undo', label: 'Annuler' },
-        { role: 'redo', label: 'Rétablir' },
+        { role: 'undo', label: ctxLabels.undo },
+        { role: 'redo', label: ctxLabels.redo },
         { type: 'separator' },
-        { role: 'cut', label: 'Couper' },
-        { role: 'copy', label: 'Copier' },
-        { role: 'paste', label: 'Coller' },
-        { role: 'delete', label: 'Supprimer' },
+        { role: 'cut', label: ctxLabels.cut },
+        { role: 'copy', label: ctxLabels.copy },
+        { role: 'paste', label: ctxLabels.paste },
+        { role: 'delete', label: ctxLabels.del },
         { type: 'separator' },
-        { role: 'selectAll', label: 'Tout sélectionner' }
+        { role: 'selectAll', label: ctxLabels.selectAll }
       );
     } else if (hasSelection) {
       template.push(
-        { role: 'copy', label: 'Copier' },
+        { role: 'copy', label: ctxLabels.copy },
         { type: 'separator' },
-        { role: 'selectAll', label: 'Tout sélectionner' }
+        { role: 'selectAll', label: ctxLabels.selectAll }
       );
     } else {
-      // Conserver une option sélectionner tout même sans sélection
-      template.push({ role: 'selectAll', label: 'Tout sélectionner' });
+      template.push({ role: 'selectAll', label: ctxLabels.selectAll });
     }
 
-    template.push({ type: 'separator' }, { role: 'toggleDevTools', label: 'Outils de développement' });
+    template.push({ type: 'separator' }, { role: 'toggleDevTools', label: ctxLabels.toggleDevTools });
     const menu = Menu.buildFromTemplate(template);
     menu.popup({ window: win });
   });
 
-  // Gestion de la fermeture : demander confirmation si une installation est en cours
+  // Handle close: request confirmation if an installation is in progress
   win.on('close', (event) => {
-    // Vérifier s'il y a une installation active
+    // Check if there is an active installation
     if (activeInstalls.size > 0) {
       event.preventDefault();
-      // Envoyer un message au renderer pour afficher la modale de confirmation
+      // Send a message to the renderer to show the confirmation modal
       win.webContents.send('before-close');
     }
   });
@@ -442,23 +444,23 @@ function createWindow () {
 }
 
 app.whenReady().then(() => {
-  try { iconCacheManager.registerProtocol(protocol); } catch(e) { console.warn('Protocole appicon échec:', e); }
+  try { iconCacheManager.registerProtocol(protocol); } catch(e) { console.warn('appicon protocol failed:', e); }
   const win = createWindow();
-  try { initTray(win); } catch(e) { console.warn('initTray échec:', e); }
+  try { initTray(win); } catch(e) { console.warn('initTray failed:', e); }
 });
 
 app.on('before-quit', () => { try { destroyTray(); } catch(_) {} });
 
-// IPC: purge complète du cache d'icônes
+// IPC: full icon cache purge
 ipcMain.handle('purge-icons-cache', async () => iconCacheManager.purgeCache());
 
 // Ouvrir une URL dans le navigateur externe
 ipcMain.handle('open-external', async (_event, url) => {
   try {
-    // validation basique
-    if (!url || typeof url !== 'string') return { ok: false, error: 'invalid url' };
+    // basic validation
+    if (!url || typeof url !== 'string') return { ok: false, error: tErr('errInvalidUrl', 'invalid url') };
     // Autoriser seulement http/https
-    if (!/^https?:\/\//i.test(url)) return { ok: false, error: 'scheme not allowed' };
+    if (!/^https?:\/\//i.test(url)) return { ok: false, error: tErr('errSchemeNotAllowed', 'scheme not allowed') };
     await shell.openExternal(url);
     return { ok: true };
   } catch (e) {
@@ -467,10 +469,10 @@ ipcMain.handle('open-external', async (_event, url) => {
 });
 
 
-// Action générique: install / uninstall / update (simple)
-ipcMain.handle('am-action', async (event, action, software) => {
+// Generic action: install / uninstall / update (simple)
+ipcMain.handle('am-action', async (event, action, software, scope) => {
   const pm = await detectPackageManager();
-  if (!pm) return "Aucun gestionnaire 'am' ou 'appman' trouvé";
+  if (!pm) return tErr('errNoPm', "No 'am' or 'appman' package manager found");
 
   if (action === '__update_all__') {
     return new Promise((resolve) => {
@@ -483,21 +485,23 @@ ipcMain.handle('am-action', async (event, action, software) => {
       child.on('close', (code) => {
         clearTimeout(killTimer);
         if (code === 0) return resolve(stdoutBuf || '');
-        resolve(stderrBuf || stdoutBuf || `Processus terminé avec code ${code}`);
+        resolve(stderrBuf || stdoutBuf || tErr('errProcessFinishedCode', 'Process finished with code {code}', { code }));
       });
       child.on('error', (err) => {
         clearTimeout(killTimer);
         invalidatePackageManagerCache();
-        resolve(err.message || 'Erreur inconnue');
+        resolve(err.message || tErr('errUnknown', 'Unknown error'));
       });
     });
   }
 
-  // Pour install/désinstall, utiliser node-pty pour la gestion du mot de passe
+  // For install/uninstall, use node-pty for password management
   let args;
-  if (action === 'install') args = ['-i', software];
+  if (action === 'install') {
+    args = scope === 'user' ? ['-i', '--user', software] : ['-i', software];
+  }
   else if (action === 'uninstall') args = ['-R', software];
-  else return `Action inconnue: ${action}`;
+  else return tErr('errUnknownAction', 'Unknown action: {action}', { action });
 
   return new Promise((resolve) => {
     try {
@@ -517,8 +521,9 @@ ipcMain.handle('am-action', async (event, action, software) => {
       });
       let output = '';
       let done = false;
+      let pathChoiceSent = false;
       const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
-      // Gestion du prompt mot de passe sudo
+      // Handle sudo password prompt
       passwordWaiters.set(id, (password) => {
         if (typeof password === 'string') {
           try { child.write(password + '\n'); } catch(_) {}
@@ -529,8 +534,24 @@ ipcMain.handle('am-action', async (event, action, software) => {
       child.onData((txt) => {
         output += txt;
         if (/\[sudo\]|mot de passe.*:|password.*:/i.test(txt)) {
-          // Demander le mot de passe au renderer via IPC
+          // Request the password from the renderer via IPC
           if (event.sender) event.sender.send('password-prompt', { id });
+        }
+        // Auto-select path when am detects multiple install locations
+        if (!pathChoiceSent && output.includes('1.') && output.includes('2.')) {
+          const pathOptions = (output.match(/\d+\.\s+\/\S+/g) || []);
+          if (pathOptions.length >= 2) {
+            let choice = '1';
+            for (const pl of pathOptions) {
+              const numMatch = pl.match(/^(\d+)\.\s+(\/\S+)/);
+              if (!numMatch) continue;
+              const isSystemPath = numMatch[2].startsWith('/opt');
+              if (scope === 'user' && !isSystemPath) { choice = numMatch[1]; break; }
+              if (scope !== 'user' && isSystemPath) { choice = numMatch[1]; break; }
+            }
+            pathChoiceSent = true;
+            setTimeout(() => { try { child.write(choice + '\n'); } catch(_) {} }, 200);
+          }
         }
       });
       child.onExit((evt) => {
@@ -544,8 +565,22 @@ ipcMain.handle('am-action', async (event, action, software) => {
         done = true;
         passwordWaiters.delete(id);
         invalidatePackageManagerCache();
-        resolve(err?.message || 'Erreur inconnue');
+        // EIO often means the process exited normally during cleanup — treat as success
+        if (err && err.message && err.message.includes('EIO')) {
+          resolve(output || 'done');
+        } else {
+          resolve(err?.message || tErr('errUnknown', 'Unknown error'));
+        }
       });
+      // Safety timeout: kill the process after 30 seconds if it hasn't exited
+      setTimeout(() => {
+        if (!done) {
+          done = true;
+          passwordWaiters.delete(id);
+          try { child.kill('SIGKILL'); } catch(_) {}
+          resolve(output || 'done');
+        }
+      }, 30000);
     } catch (e) {
       invalidatePackageManagerCache();
       return resolve(e && e.message ? e.message : String(e));
@@ -553,14 +588,14 @@ ipcMain.handle('am-action', async (event, action, software) => {
   });
 });
 
-// --- Installation streaming (Étapes 1 & 2) ---
-// Fournit un suivi ligne à ligne pour l'installation d'un paquet.
-// Retourne { id } immédiatement, puis envoie des événements 'install-progress'
+// --- Streaming installation (Steps 1 & 2) ---
+// Provides line-by-line tracking for package installation.
+// Returns { id } immediately, then sends 'install-progress' events
 // { id, kind:'start', name }
 // { id, kind:'line', line }
 // { id, kind:'done', code, success, duration, output }
 // { id, kind:'error', message }
-// Ajout : gestion du prompt mot de passe sudo
+// Added: handle sudo password prompt
 ipcMain.on('password-response', (event, payload) => {
   if (!payload || !payload.id) return;
   const waiter = passwordWaiters.get(payload.id);
@@ -569,13 +604,14 @@ ipcMain.on('password-response', (event, payload) => {
     passwordWaiters.delete(payload.id);
   }
 });
-ipcMain.handle('install-start', async (event, name) => {
+ipcMain.handle('install-start', async (event, name, scope) => {
   console.log('IPC install-start reçu pour', name);
   const pm = await detectPackageManager();
   // Log le lancement du processus
-  console.log('Processus lancé:', pm, ['-i', name]);
-  if (!pm) return { error: "Aucun gestionnaire 'am' ou 'appman' trouvé" };
-  if (!name || typeof name !== 'string') return { error: 'Nom invalide' };
+  const installArgs = scope === 'user' ? ['-i', '--user', name] : ['-i', name];
+  console.log('Process started:', pm, installArgs);
+  if (!pm) return { error: tErr('errNoPm', "No 'am' or 'appman' package manager found") };
+  if (!name || typeof name !== 'string') return { error: tErr('errInvalidName', 'Invalid name') };
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
   let output = '';
   const startedAt = Date.now();
@@ -587,11 +623,11 @@ ipcMain.handle('install-start', async (event, name) => {
     COLS: '80',
     ROWS: '30',
     FORCE_COLOR: '1',
-    // Ajoute d'autres variables si besoin
+    // Add other variables if needed
   });
   let child;
   try {
-    child = pty.spawn(pm, ['-i', name], {
+    child = pty.spawn(pm, installArgs, {
       name: 'xterm-color',
       cols: 80,
       rows: 30,
@@ -600,73 +636,86 @@ ipcMain.handle('install-start', async (event, name) => {
     });
   } catch (err) {
     invalidatePackageManagerCache();
-    return { error: err?.message || 'Impossible de démarrer le processus.' };
+    return { error: err?.message || tErr('errUnableStartProcess', 'Unable to start the process.') };
   }
   activeInstalls.set(id, child);
   console.log('[ACTIVE-INSTALLS] Ajout process id:', id);
   const wc = event.sender;
   const send = (payload) => { try { wc.send('install-progress', Object.assign({ id }, payload)); } catch(_) {} };
   send({ kind:'start', name });
-  const killTimer = setTimeout(() => { try { child.kill('SIGTERM'); } catch(_){} }, 10*60*1000); // 10 min sécurité
+  const killTimer = setTimeout(() => { try { child.kill('SIGTERM'); } catch(_){} }, 10*60*1000); // 10 min safety
   function flushLines(chunk, isErr){
-    // Log chaque chunk reçu du processus
+    // Log each chunk received from the process
     const txt = chunk.toString();
     output += txt;
-    // Détection du prompt mot de passe sudo
+    // Detect sudo password prompt
     if (/\[sudo\]|mot de passe.*:|password.*:/i.test(txt)) {
-      // Demander le mot de passe au renderer via IPC
+      // Request the password from the renderer via IPC
       wc.send('password-prompt', { id });
-      // Attendre la réponse avant d'envoyer le mot de passe au process
+      // Wait for the response before sending the password to the process
       passwordWaiters.set(id, (password) => {
         if (typeof password === 'string') {
           try { child.write(password + '\n'); } catch(_) {}
         } else {
-          // Si annulé, tuer le process
+          // If cancelled, kill the process
           try { child.kill('SIGKILL'); } catch(_) {}
         }
       });
     }
-    // Envoi du chunk brut pour affichage terminal fidèle
+    // Send raw chunk for faithful terminal display
     send({ kind: 'line', raw: txt, stream: isErr ? 'stderr' : 'stdout' });
-    // Ancien découpage en lignes pour prompts interactifs
+    // Legacy line splitting for interactive prompts
     let buffer = (isErr ? stderrRemainder : stdoutRemainder) + txt;
     const lines = buffer.split(/\r?\n/);
     if (lines.length > 1) {
-      // conserver la dernière partielle
+      // keep the last partial line
       if (isErr) stderrRemainder = lines.pop(); else stdoutRemainder = lines.pop();
       for (let idx = 0; idx < lines.length; idx++) {
         const line = lines[idx].trim();
         if (!line) continue;
-        // Détection du prompt de choix interactif (évite de matcher la ligne concaténée avec la réponse)
-        if ((/Choose which version|Which version you choose.*press ENTER|Please choose/i.test(line)) && !/\?\d+$/.test(line)) {
-          // Collecter toutes les options numérotées dans les lignes suivantes jusqu'à la fin du buffer
+        // Detect interactive choice prompt: a line ending with ':' or '?'
+        // followed by numbered options (1. ... / 2. ...).
+        // This is locale-agnostic — am/appman always uses numbered lists
+        // regardless of language.
+        if ((/[:?]\s*$/.test(line)) && !/\?\d+$/.test(line)) {
+          // Heuristic: peek ahead to confirm the next non-empty line is a
+          // numbered option; otherwise skip to avoid false positives.
+          let hasNumberedOption = false;
+          for (let peek = idx + 1; peek < Math.min(idx + 4, lines.length); peek++) {
+            const pl = lines[peek]?.trim();
+            if (!pl || /^[-=]+$/.test(pl)) continue;
+            if (/^\s*\d+[\.|\)]/.test(pl)) { hasNumberedOption = true; break; }
+            break;
+          }
+          if (!hasNumberedOption) continue;
+          // Collect all numbered options in the following lines until end of buffer
           const options = [];
           for (let j = idx + 1; j < lines.length; j++) {
             let l = lines[j].trim();
             if (!l || /^[-=]+$/.test(l)) continue;
             if (l.includes('|')) {
-              // Colonnes détectées : logique inchangée
+              // Columns detected: unchanged logic
               const parts = l.split('|').map(p => p.trim());
               parts.forEach(part => {
                 if (/^\s*\d+[\.|\)]/.test(part)) options.push(part);
               });
             } else {
-              // Pas de colonne : possibilité d'ajouter la ligne suivante
+              // No column: possibility to append the next line
               if (/^\s*\d+[\.|\)]/.test(l)) {
                 let opt = l;
-                // Vérifier si la ligne suivante existe et ne commence pas par un chiffre
+                // Check if the next line exists and doesn't start with a digit
                 if (j + 1 < lines.length) {
                   let next = lines[j + 1].trim();
                   if (next && !/^\s*\d+[\.|\)]/.test(next) && !/^[-=]+$/.test(next)) {
                     opt += ' ' + next;
-                    j++; // Sauter la ligne suivante
+                    j++; // skip next line
                   }
                 }
                 options.push(opt);
               }
             }
           }
-          // Trier les options par numéro croissant
+          // Sort options by ascending number
           options.sort((a, b) => {
             const na = parseInt(a.match(/\d+/)?.[0] || '0', 10);
             const nb = parseInt(b.match(/\d+/)?.[0] || '0', 10);
@@ -685,16 +734,16 @@ ipcMain.handle('install-start', async (event, name) => {
   child.onExit((evt) => {
     clearTimeout(killTimer);
     // Log de sortie du process
-    console.log('[PTY] Process terminé pour id:', id, 'code:', evt.exitCode, 'durée:', (Date.now() - startedAt), 'ms');
-    // Émettre éventuelles dernières lignes partielles
+    console.log('[PTY] Process finished for id:', id, 'code:', evt.exitCode, 'duration:', (Date.now() - startedAt), 'ms');
+    // Emit any remaining partial lines
     if (stdoutRemainder && stdoutRemainder.trim()) send({ kind:'line', line: stdoutRemainder.trim(), stream:'stdout' });
     if (stderrRemainder && stderrRemainder.trim()) send({ kind:'line', line: stderrRemainder.trim(), stream:'stderr' });
-    // Vérifier que le process est bien terminé avant suppression
+    // Verify the process has finished before cleanup
     if (activeInstalls.has(id)) {
       activeInstalls.delete(id);
-      console.log('[ACTIVE-INSTALLS] Suppression process id:', id);
+      console.log('[ACTIVE-INSTALLS] Removing process id:', id);
     } else {
-      console.warn('[ACTIVE-INSTALLS] Tentative de suppression d’un process déjà supprimé pour id:', id);
+      console.warn('[ACTIVE-INSTALLS] Attempt to remove already deleted process for id:’un process déjà supprimé pour id:', id);
     }
     const duration = Date.now() - startedAt;
     const code = evt.exitCode;
@@ -705,31 +754,31 @@ ipcMain.handle('install-start', async (event, name) => {
     clearTimeout(killTimer);
     invalidatePackageManagerCache();
     try { activeInstalls.delete(id); } catch(_){ }
-    send({ kind:'error', message: err?.message || 'Erreur processus' });
+    send({ kind:'error', message: err?.message || tErr('errProcessError', 'Process error') });
   });
   return { id };
 });
 
-// Annulation forcée d'une installation en cours
+// Force cancellation of an ongoing installation
 ipcMain.handle('install-cancel', async (event, installId) => {
-  if (!installId) return { ok:false, error:'ID manquant' };
+  if (!installId) return { ok:false, error:tErr('errMissingId', 'Missing ID') };
   const child = activeInstalls.get(installId);
-  if (!child) return { ok:false, error:'Processus introuvable' };
+  if (!child) return { ok:false, error:tErr('errProcessNotFound', 'Process not found') };
   try {
-    // Annulation immédiate demandée: SIGKILL (destruction directe)
-    // NOTE: Pas de nettoyage applicatif dans l'outil am/appman si transaction partielle.
+    // Immediate cancellation requested: SIGKILL (direct kill)
+    // NOTE: No application cleanup in am/appman tool on partial transaction.
     child.kill('SIGKILL');
-    // Émettre un événement immédiat de type 'cancelled' (le close suivra quand le process aura réellement quitté)
+    // Emit an immediate 'cancelled' event (the close will follow when the process has actually exited)
     try { event.sender.send('install-progress', { id: installId, kind:'cancelled' }); } catch(_){ }
     return { ok:true };
   } catch(e){
-    return { ok:false, error: e.message || 'Annulation échouée' };
+    return { ok:false, error: e.message || tErr('errCancellationFailed', 'Cancellation failed') };
   }
 });
 
 ipcMain.handle('updates-start', async (event) => {
   const pm = await detectPackageManager();
-  if (!pm) return { error: "Aucun gestionnaire 'am' ou 'appman' trouvé" };
+  if (!pm) return { error: tErr('errNoPm', "No 'am' or 'appman' package manager found") };
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
   let child;
   let output = '';
@@ -750,7 +799,7 @@ ipcMain.handle('updates-start', async (event) => {
     });
   } catch (err) {
     invalidatePackageManagerCache();
-    return { error: err?.message || 'Impossible de démarrer la mise à jour.' };
+    return { error: err?.message || tErr('errUnableStartUpdate', 'Unable to start the update.') };
   }
   activeUpdates.set(id, child);
   const wc = event.sender;
@@ -793,15 +842,15 @@ ipcMain.handle('updates-start', async (event) => {
     }
     cleanup();
     invalidatePackageManagerCache();
-    send({ kind: 'error', message: message || 'Erreur inconnue', output });
+    send({ kind: 'error', message: message || tErr('errUnknown', 'Unknown error'), output });
   });
   return { id };
 });
 
 ipcMain.handle('updates-cancel', async (_event, id) => {
-  if (!id) return { ok: false, error: 'missing-id' };
+  if (!id) return { ok: false, error: tErr('errMissingIdShort', 'missing-id') };
   const proc = activeUpdates.get(id);
-  if (!proc) return { ok: false, error: 'not-found' };
+  if (!proc) return { ok: false, error: tErr('errNotFound', 'not-found') };
   try { proc.kill('SIGTERM'); }
   catch(_) {}
   activeUpdates.delete(id);
@@ -810,20 +859,20 @@ ipcMain.handle('updates-cancel', async (_event, id) => {
 });
 
 ipcMain.handle('install-send-choice', async (_event, installId, choice) => {
-  if (!installId) return { ok:false, error: 'ID manquant' };
+  if (!installId)     return { ok:false, error: tErr('errMissingId', 'Missing ID') };
   const child = activeInstalls.get(installId);
-  if (!child) return { ok:false, error: 'Processus introuvable' };
+  if (!child) return { ok:false, error: tErr('errProcessNotFound', 'Process not found') };
   const normalizedChoice = (() => {
     if (typeof choice === 'number' && Number.isFinite(choice)) return String(choice);
     if (typeof choice === 'string') return choice.trim();
     return '';
   })();
-  if (!normalizedChoice) return { ok:false, error: 'Choix invalide' };
+  if (!normalizedChoice) return { ok:false, error: tErr('errInvalidChoice', 'Invalid choice') };
   try {
     child.write(normalizedChoice + '\n');
     return { ok:true };
   } catch (err) {
-    return { ok:false, error: err?.message || 'Échec envoi du choix' };
+    return { ok:false, error: err?.message || tErr('errFailedSendChoice', 'Failed to send choice') };
   }
 });
 
@@ -833,40 +882,84 @@ ipcMain.handle('install-appman-auto', async () => {
     invalidatePackageManagerCache();
     return { ok: true, result };
   } catch (error) {
-    return { ok: false, error: error?.message || 'Installation AppMan échouée.' };
+    return { ok: false, error: error?.message || tErr('errAppmanInstall', 'AppMan installation failed.') };
   }
 });
 
 
-// Liste détaillée: distingue installées vs catalogue
+// Detailed list: distinguish installed vs catalog
 ipcMain.handle('list-apps-detailed', async () => {
   const pm = await detectPackageManager();
   if (!pm) {
-    return { installed: [], all: [], pmFound: false, error: "Aucun gestionnaire 'am' ou 'appman' détecté dans le PATH." };
+    return { installed: [], all: [], pmFound: false, error: tErr('errNoPmPath', "No 'am' or 'appman' package manager detected in PATH.") };
   }
   // We call both `pm -l` (catalog) and `pm -f` (installed files list). Some pm implementations
   // (notably appman) print only a summary in `-l` and not the installed items — `-f` contains
   // the actual list of installed programs. Run both and merge results.
   const listCmd = `${pm} -l`;
   const installedCmd = `${pm} -f`;
-  const execPromise = (cmd) => new Promise(res => {
-    exec(cmd, (err, stdout) => res({ err, stdout: stdout || '' }));
-  });
   return new Promise(async (resolve) => {
+    let listRes, instRes;
+    let tmpDir1, tmpDir2;
     try {
-      const [listRes, instRes] = await Promise.all([execPromise(listCmd), execPromise(installedCmd)]);
+      // appman sets AMCACHEDIR="$CACHEDIR/$AMCLI" where CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}".
+      // The AMCACHEDIR env var is IGNORED (overwritten at script line 270), so we must
+      // use XDG_CACHE_HOME to redirect.  Each parallel exec gets its own XDG_CACHE_HOME
+      // pointing to an isolated temp copy of the cache dir.
+      // In AppImage, HOST_XDG_CACHE_HOME holds the host's real value.
+      const realXdgCacheHome = process.env.HOST_XDG_CACHE_HOME || process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
+      const realPmCacheDir = path.join(realXdgCacheHome, pm);
+
+      tmpDir1 = fs.mkdtempSync(path.join(os.tmpdir(), 'amc-' + pm + '-l-'));
+      fs.mkdirSync(path.join(tmpDir1, pm), { recursive: true });
+      tmpDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'amc-' + pm + '-f-'));
+      fs.mkdirSync(path.join(tmpDir2, pm), { recursive: true });
+
+      if (fs.existsSync(realPmCacheDir)) {
+        const entries = fs.readdirSync(realPmCacheDir);
+        for (const entry of entries) {
+          if (entry.endsWith('.tmp')) continue;
+          const src = path.join(realPmCacheDir, entry);
+          if (fs.statSync(src).isFile()) {
+            for (const destDir of [tmpDir1, tmpDir2]) {
+              fs.copyFileSync(src, path.join(destDir, pm, entry));
+            }
+          }
+        }
+      }
+
+      [listRes, instRes] = await Promise.all([
+        new Promise(res => exec(listCmd, { env: { ...process.env, XDG_CACHE_HOME: tmpDir1 } }, (err, stdout) => res({ err, stdout: stdout || '' }))),
+        new Promise(res => exec(installedCmd, { env: { ...process.env, XDG_CACHE_HOME: tmpDir2 } }, (err, stdout) => res({ err, stdout: stdout || '' })))
+      ]);
+
+      // Merge cache updates back — prefer the -f result (has fresh version-args + files-*).
+      for (const srcDir of [tmpDir1, tmpDir2]) {
+        const pmSrc = path.join(srcDir, pm);
+        if (fs.existsSync(pmSrc) && fs.existsSync(realPmCacheDir)) {
+          for (const entry of fs.readdirSync(pmSrc)) {
+            if (entry.endsWith('.tmp')) continue;
+            const src = path.join(pmSrc, entry);
+            if (fs.statSync(src).isFile()) {
+              fs.copyFileSync(src, path.join(realPmCacheDir, entry));
+            }
+          }
+        }
+      }
       if ((listRes.err && listRes.err.code === 127) || (instRes.err && instRes.err.code === 127)) {
         invalidatePackageManagerCache();
       }
       if ((listRes.err || !listRes.stdout) && (instRes.err || !instRes.stdout)) {
-        return resolve({ installed: [], all: [], pmFound: true, error: 'Échec exécution commande liste.' });
+        return resolve({ installed: [], all: [], pmFound: true, error: tErr('errListExecFailed', 'List command execution failed.') });
       }
 
       const catalogSet = new Set();
       const catalogDesc = new Map();
       const installedFromCatalog = new Set();
-      const installedSet = new Set();
+      const installedEntries = []; // {name, scope, version} — allows same name in multiple scopes
+      const installedNameSet = new Set(); // unique installed names (for fallback/catalog dedup)
       const installedDesc = new Map();
+      const installedScope = new Map(); // name → 'system' | 'user' (last scope seen, for fallback)
   const diamondSet = new Set(); // apps that were listed with leading '◆' in catalog output
 
       // Parse catalog from -l output. Instead of relying on any fixed
@@ -879,12 +972,6 @@ ipcMain.handle('list-apps-detailed', async () => {
         const lines = (listRes.stdout || '').split('\n');
         let inCatalog = false;
         let seenAppEntry = false;
-        const ignoreNamePatterns = [
-          /^YOU/i,
-          /^-/,
-          /^TOTAL/i,
-          /^\*has/i
-        ];
         // curEntry tracks the current ◆ entry so continuation lines can be
         // appended to its description (descriptions can span multiple lines).
         let curName = null;
@@ -929,7 +1016,10 @@ ipcMain.handle('list-apps-detailed', async () => {
               desc = rest.slice(colonIdx + 1).trim() || null;
             }
             const name = left.split(/\s+/)[0].trim();
-            if (ignoreNamePatterns.some(re => re.test(name))) continue;
+            // Structural check: valid am/appman app names are alphanumeric
+            // with dots, underscores, or hyphens. Skip anything that doesn't
+            // match — this is locale-independent.
+            if (!/^[A-Za-z0-9][A-Za-z0-9._+-]*$/.test(name)) continue;
             curName = name;
             curDesc = desc;
             curInCatalog = inCatalog;
@@ -945,48 +1035,81 @@ ipcMain.handle('list-apps-detailed', async () => {
       }
 
       // Parse installed list from -f output (appman -f prints installed programs)
-      // Example -f lines:
-      // "◆ pycharm             | 2025.2.2               | appimage       | 823 MiB"
+      // Example -f lines (English):
+      //   - APPNAME  | VERSION | TYPE     | SIZE
+      //   - -------  | ------- | ----     | ----
+      //   ◆ opencode | 1.17.7 ✓ | appimage | 161 MiB
+      // Example -f lines (Serbian):
+      //   - APLIKACIJA | VERZIJA  | TIP      | VELIČINA
+      //   - -------    | -------  | ----     | ----
+      //   ◆ opencode   | 1.17.7 ✓ | appimage | 161 MiB
+      //
+      // When `am` is the PM, the output has TWO sections:
+      //   System section: title contains "AM" (not "APPMAN"), data rows have 5 cols (NAME|DB|VERSION|TYPE|SIZE)
+      //   User section:   title contains "APPMAN", data rows have 4 cols (NAME|VERSION|TYPE|SIZE)
+      // The section titles always contain the PM name in quotes (locale-independent).
+      //
+      // Strategy: detect the header line structurally (a line starting with
+      // "- " that contains "|" separators), skip the separator row after it,
+      // then only process diamond-prefixed data rows. Track section scope
+      // by detecting title lines that precede table headers.
       try {
         const lines = (instRes.stdout || '').split('\n');
-        const ignoreNamePatterns = [
-          /^YOU/i,
-          /^-/,
-          /^TOTAL/i,
-          /^\*has/i
-        ];
-        let versionColIdx = 2; // par défaut, colonne 3 (0-based)
+        const seenInstalled = new Set();
         let headerParsed = false;
+        let currentScope = null;
         for (const raw of lines) {
           let line = raw.trim();
           if (!line) continue;
-          if (line.startsWith('APPNAME') || line.startsWith('- APPNAME')) {
-            // Détecter la colonne version dynamiquement
-            const headerCols = line.replace(/^- /, '').split('|').map(s => s.trim());
-            versionColIdx = headerCols.findIndex(col => col.toLowerCase().startsWith('version'));
-            headerParsed = true;
+          // Reset on long separator lines (section boundary)
+          if (/^-{10,}$/.test(line) || /^={10,}$/.test(line)) {
+            headerParsed = false;
             continue;
           }
-          if (line.startsWith('-------')) continue; // ignorer la ligne de séparation
+          // Detect section title: a line that contains quoted PM name.
+          // Title lines contain "APPMAN" or "AM" in quotes (Unicode \u201c\u201d or ASCII ").
+          if (line.includes('"APPMAN"') || line.includes('\u201cAPPMAN\u201d')) {
+            currentScope = 'user';
+            continue;
+          }
+          if (line.includes('"AM"') || line.includes('\u201cAM\u201d')) {
+            // Only match standalone "AM", not "APPMAN" (already handled above)
+            if (!line.includes('APPMAN')) currentScope = 'system';
+            continue;
+          }
+          // Detect header structurally: starts with "- " and contains "|"
+          if (!headerParsed && line.startsWith('- ') && line.includes('|')) {
+            headerParsed = true;
+            if (!currentScope) currentScope = 'system';
+            continue;
+          }
+          if (!headerParsed) continue; // skip everything before the header
+          // Only process diamond-prefixed data rows
           if (line.startsWith('\u25c6')) line = line.slice(1).trim();
+          else continue; // skip summary lines, footers, blank lines
           if (!line) continue;
-          // Try to parse "name | ... | version | ..." separated by |
           if (line.includes('|')) {
-            const cols = line.split('|').map(s => s.trim()).filter(Boolean);
-            const name = cols[0] ? cols[0].split(/\s+/)[0].trim() : null;
-            const version = (typeof versionColIdx === 'number' && versionColIdx >= 0 && versionColIdx < cols.length) ? cols[versionColIdx] : null;
-            if (name && !ignoreNamePatterns.some(re => re.test(name))) {
-              installedSet.add(name);
+            const rawCols = line.split('|').map(s => s.trim());
+            // Strip trailing empty columns (from trailing pipes) but keep
+            // empty middle columns so 5-col rows don't collapse to 4.
+            while (rawCols.length > 1 && rawCols[rawCols.length - 1] === '') rawCols.pop();
+            const cols = rawCols;
+            const name = cols[0] ? cols[0].split(/\s+/)[0].trim().replace(/\*+$/, '') : null;
+            // VERSION is at index 2 in the 5-col format (NAME|DB|VERSION|TYPE|SIZE).
+            // When the terminal wraps a long row, only 3 columns survive on the
+            // first line (NAME|DB|VERSION) — the version is still at index 2.
+            // In the rare 4-col format (NAME|VERSION|TYPE|SIZE) it is at index 1.
+            const versionColIdx = (cols.length === 4) ? 1 : 2;
+            const version = (versionColIdx >= 0 && versionColIdx < cols.length) ? cols[versionColIdx] : null;
+            if (name) {
+              const entryKey = (currentScope || '') + ':' + name;
+              if (!seenInstalled.has(entryKey)) {
+                seenInstalled.add(entryKey);
+                installedEntries.push({ name, scope: currentScope || null, version: version || null });
+                installedNameSet.add(name);
+              }
               if (version) installedDesc.set(name, version);
-            }
-          } else {
-            // Fallback: first token is name, second token may be version
-            const parts = line.split(/\s+/).filter(Boolean);
-            const name = parts[0] || null;
-            const version = parts[1] || null;
-            if (name && !ignoreNamePatterns.some(re => re.test(name))) {
-              installedSet.add(name);
-              if (version) installedDesc.set(name, version);
+              if (currentScope) installedScope.set(name, currentScope);
             }
           }
         }
@@ -996,13 +1119,18 @@ ipcMain.handle('list-apps-detailed', async () => {
 
       // if -f output looks broken (empty or contains every catalog entry),
       // fall back on the subset gathered from the catalog parsing.
-      if ((installedSet.size === 0 && installedFromCatalog.size > 0) ||
-          (catalogSet.size > 0 && installedSet.size >= catalogSet.size)) {
+      if ((installedEntries.length === 0 && installedFromCatalog.size > 0) ||
+          (catalogSet.size > 0 && installedEntries.length >= catalogSet.size)) {
         if (installedFromCatalog.size > 0 && installedFromCatalog.size < catalogSet.size) {
-          installedSet.clear();
-          for (const n of installedFromCatalog) installedSet.add(n);
+          installedEntries.length = 0;
+          installedNameSet.clear();
+          for (const n of installedFromCatalog) {
+            installedEntries.push({ name: n, scope: null, version: installedDesc.get(n) || null });
+            installedNameSet.add(n);
+          }
         }
       }
+
 
       // Build bundle-child map: apps whose description says
       // "This script installs the full 'X' suite" are children of X.
@@ -1014,24 +1142,56 @@ ipcMain.handle('list-apps-detailed', async () => {
         if (m) bundleChildOf[name] = m[1].toLowerCase();
       }
 
-      const allSet = new Set([...catalogSet, ...installedSet]);
-      const all = Array.from(allSet).map(name => ({
-        name,
-        installed: installedSet.has(name),
-        hasDiamond: diamondSet.has(name),
-        version: installedDesc.get(name) || null,
-        desc: catalogDesc.get(name) || null
-      }));
-      const installed = Array.from(installedSet).map(name => ({
-        name,
-        installed: true,
-        hasDiamond: diamondSet.has(name),
-        version: installedDesc.get(name) || null,
-        desc: catalogDesc.get(name) || null
-      }));
-      return resolve({ installed, all, pmFound: true, bundleChildOf });
+      // Build all array: installed entries (one per scope) + catalog-only entries (one per name)
+      const all = [];
+      const allSeen = new Set(); // track name+scope to avoid duplicates
+      // Installed entries (one per scope — same app can appear in both system and user)
+      for (const entry of installedEntries) {
+        if (entry.name.toLowerCase() === 'am') continue;
+        const key = (entry.scope || '') + ':' + entry.name;
+        if (allSeen.has(key)) continue;
+        allSeen.add(key);
+        all.push({
+          name: entry.name,
+          installed: true,
+          hasDiamond: diamondSet.has(entry.name),
+          version: entry.version || null,
+          desc: catalogDesc.get(entry.name) || null,
+          scope: entry.scope || null
+        });
+      }
+      // Catalog-only entries (not installed in any scope)
+      for (const name of catalogSet) {
+        if (name.toLowerCase() === 'am') continue;
+        if (installedNameSet.has(name)) continue; // already added as installed entry
+        if (!allSeen.has(name)) {
+          allSeen.add(name);
+          all.push({
+            name,
+            installed: false,
+            hasDiamond: diamondSet.has(name),
+            version: null,
+            desc: catalogDesc.get(name) || null,
+            scope: null
+          });
+        }
+      }
+      const installed = installedEntries
+        .filter(e => e.name.toLowerCase() !== 'am')
+        .map(entry => ({
+          name: entry.name,
+          installed: true,
+          hasDiamond: diamondSet.has(entry.name),
+          version: entry.version || null,
+          desc: catalogDesc.get(entry.name) || null,
+          scope: entry.scope || null
+        }));
+      return resolve({ installed, all, pmFound: true, pmName: pm, bundleChildOf });
     } catch (e) {
-      return resolve({ installed: [], all: [], pmFound: true, error: 'Erreur interne lors du parsing.' });
+      return resolve({ installed: [], all: [], pmFound: true, error: tErr('errInternalParsing', 'Internal parsing error.') });
+    } finally {
+      try { if (tmpDir1) fs.rmSync(tmpDir1, { recursive: true, force: true }); } catch (_) {}
+      try { if (tmpDir2) fs.rmSync(tmpDir2, { recursive: true, force: true }); } catch (_) {}
     }
   });
 });
@@ -1045,7 +1205,7 @@ ipcMain.handle('sandbox-info', async (_event, appName) => {
     pmFound: !!pm
   };
   if (!pm) {
-    response.error = 'missing-pm';
+    response.error = tErr('errMissingPm', 'missing-pm');
     response.info = { installed: false, sandboxed: false };
     return response;
   }
@@ -1056,8 +1216,8 @@ ipcMain.handle('sandbox-info', async (_event, appName) => {
   }
   const execPath = await resolveCommandPath(normalizedName);
   const sandboxed = await isSandboxWrapper(execPath);
-  // Si l'app est sandboxée, c'est forcément un AppImage (seules les AppImages peuvent être sandboxées)
-  // Sinon, on détecte via les magic bytes
+  // If the app is sandboxed, it must be an AppImage (only AppImages can be sandboxed)
+  // Otherwise, detect via magic bytes
   let isAppImage = sandboxed ? true : await detectAppImageFromPath(execPath);
   const selfExecPath = process.env.APPIMAGE || process.execPath;
   const isSelfAppImage = execPath && selfExecPath && path.resolve(execPath) === path.resolve(selfExecPath);
@@ -1077,13 +1237,13 @@ ipcMain.handle('sandbox-info', async (_event, appName) => {
 
 ipcMain.handle('sandbox-configure', async (event, payload = {}) => {
   const pm = await detectPackageManager();
-  if (!pm) return { ok: false, error: 'missing-pm' };
+  if (!pm) return { ok: false, error: tErr('errMissingPm', 'missing-pm') };
   const deps = await detectSandboxDependencies();
   if (!deps.hasSas && !deps.hasAisap) {
-    return { ok: false, error: 'missing-dependency' };
+    return { ok: false, error: tErr('errMissingDependency', 'missing-dependency') };
   }
   const normalizedName = typeof payload.appName === 'string' ? payload.appName.trim() : '';
-  if (!normalizedName) return { ok: false, error: 'invalid-app' };
+  if (!normalizedName) return { ok: false, error: tErr('errInvalidApp', 'invalid-app') };
   const shareDirsInput = typeof payload.shareDirs === 'object' && payload.shareDirs !== null ? payload.shareDirs : {};
   const dirSelections = {};
   SANDBOX_DIR_KEYS.forEach((key) => {
@@ -1108,15 +1268,15 @@ ipcMain.handle('sandbox-configure', async (event, payload = {}) => {
     stdinScript,
     appName: normalizedName
   });
-  if (!result.ok && !result.error) result.error = 'sandbox-configure-failed';
+  if (!result.ok && !result.error) result.error = tErr('errSandboxConfigureFailed', 'sandbox-configure-failed');
   return result;
 });
 
 ipcMain.handle('sandbox-disable', async (event, payload = {}) => {
   const pm = await detectPackageManager();
-  if (!pm) return { ok: false, error: 'missing-pm' };
+  if (!pm) return { ok: false, error: tErr('errMissingPm', 'missing-pm') };
   const normalizedName = typeof payload.appName === 'string' ? payload.appName.trim() : '';
-  if (!normalizedName) return { ok: false, error: 'invalid-app' };
+  if (!normalizedName) return { ok: false, error: tErr('errInvalidApp', 'invalid-app') };
   const args = ['--disable-sandbox', normalizedName];
   const result = await runSandboxTask(event.sender, {
     pm,
@@ -1124,11 +1284,11 @@ ipcMain.handle('sandbox-disable', async (event, payload = {}) => {
     args,
     appName: normalizedName
   });
-  if (!result.ok && !result.error) result.error = 'sandbox-disable-failed';
+  if (!result.ok && !result.error) result.error = tErr('errSandboxDisableFailed', 'sandbox-disable-failed');
   return result;
 });
 
-// Contrôles de fenêtre pour le mode frameless
+// Window controls for frameless mode
 ipcMain.handle('window-control', (event, action) => {
   const win = BrowserWindow.fromWebContents(event.sender);
   if (!win) return;
@@ -1139,10 +1299,17 @@ ipcMain.handle('window-control', (event, action) => {
   }
 });
 
-// Handler pour fermer la fenêtre (appelé après confirmation)
+// Handler to close the window (called after confirmation)
 ipcMain.handle('close-window', (event) => {
   const win = BrowserWindow.fromWebContents(event.sender);
-  if (win) win.destroy(); // Force la fermeture sans redemander
+  if (win) win.destroy(); // Force close without prompting
+});
+
+// Update tray and context menu language
+ipcMain.handle('set-tray-locale', (_event, locale) => {
+  setTrayLocale(locale);
+  if (locale && locale !== 'auto') currentLocale = locale;
+  setLocale(locale);
 });
 
 

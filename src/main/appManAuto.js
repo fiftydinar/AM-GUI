@@ -1,3 +1,4 @@
+const { tErr } = require('./trayI18n');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -12,7 +13,7 @@ async function installAppManAuto() {
   fs.mkdirSync(bindir, { recursive: true });
   const res = await fetch(APPMAN_URL, { headers: { 'User-Agent': USER_AGENT } });
   if (!res.ok) {
-    throw new Error(`Téléchargement échoué (HTTP ${res.status})`);
+    throw new Error(tErr('errDownloadFailed', 'Download failed (HTTP {status})', { status: res.status }));
   }
   const buffer = Buffer.from(await res.arrayBuffer());
   const target = path.join(bindir, 'appman');

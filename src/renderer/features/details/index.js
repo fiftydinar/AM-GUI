@@ -20,6 +20,7 @@
     const showToast = typeof options.showToast === 'function' ? options.showToast : () => {};
     const t = typeof options.translate === 'function' ? options.translate : (key) => key;
     const enqueueInstall = typeof options.enqueueInstall === 'function' ? options.enqueueInstall : () => {};
+    const getInstallScope = typeof options.getInstallScope === 'function' ? options.getInstallScope : () => null;
     const removeFromQueue = typeof options.removeFromQueue === 'function' ? options.removeFromQueue : () => {};
     const applyDetailsSandboxBadge = typeof options.applyDetailsSandboxBadge === 'function' ? options.applyDetailsSandboxBadge : null;
     const refreshAllInstallButtons = typeof options.refreshAllInstallButtons === 'function' ? options.refreshAllInstallButtons : () => {};
@@ -27,6 +28,8 @@
     const loadApps = typeof options.loadApps === 'function' ? options.loadApps : async () => {};
     const openActionConfirm = typeof options.openActionConfirm === 'function' ? options.openActionConfirm : fallbackPromise;
     const rerenderActiveCategory = typeof options.rerenderActiveCategory === 'function' ? options.rerenderActiveCategory : null;
+    const updateScopeButtonUI = typeof options.updateScopeButtonUI === 'function' ? options.updateScopeButtonUI : () => {};
+    const onExitDetails = typeof options.onExitDetails === 'function' ? options.onExitDetails : () => {};
 
     const scrollShell = options.scrollShell || null;
     const appsContainer = options.appsContainer || null;
@@ -93,19 +96,24 @@
         if (!response.ok) throw new Error('HTTP ' + response.status);
         markdown = await response.text();
       } catch (error) {
-        throw new Error('Échec fetch: ' + (error.message || error));
+        const tMsg = typeof window.t === 'function' ? window.t('error.fetchFailed', { msg: error.message || error }) : null;
+        throw new Error(tMsg || ('Fetch failed: ' + (error.message || error)));
       }
       let shortDesc = '';
       let longDesc = '';
       try {
-        if (!window.marked) throw new Error('marked non chargé');
+        if (!window.marked) {
+          const tMsg = typeof window.t === 'function' ? window.t('error.markedNotLoaded') : null;
+          throw new Error(tMsg || 'marked not loaded');
+        }
         let md = markdown;
         const lines = md.split(/\r?\n/);
         const tableIdx = lines.findIndex((line) => /^\s*\|/.test(line));
         if (tableIdx !== -1) md = lines.slice(0, tableIdx).join('\n');
         longDesc = window.marked.parse(md);
         const descLines = md.split(/\r?\n/).map((line) => line.trim()).filter((line) => line && !line.startsWith('#'));
-        shortDesc = descLines[0] || 'Description non fournie.';
+        const noDesc = typeof window.t === 'function' ? window.t('details.noDescription') : null;
+        shortDesc = descLines[0] || noDesc || 'No description provided.';
       } catch (_) {
         shortDesc = 'Description indisponible.';
         longDesc = 'Impossible de parser le markdown.';
@@ -115,17 +123,45 @@
       applyDescription(appName, record);
     }
 
-    function showDetails(appName) {
-      const app = (state.allApps || []).find((entry) => entry && entry.name === appName);
+    function parseAppId(appId) {
+      const pipeIdx = appId.lastIndexOf('|');
+      if (pipeIdx !== -1) {
+        const scope = appId.slice(pipeIdx + 1);
+        const name = appId.slice(0, pipeIdx);
+        if (scope === 'system' || scope === 'user') return { name, scope };
+      }
+      return { name: appId, scope: null };
+    }
+
+    function findApp(appId) {
+      const { name, scope } = parseAppId(appId);
+      const allApps = state.allApps || [];
+      if (scope) {
+        return allApps.find(e => e && e.name === name && e.scope === scope)
+          || allApps.find(e => e && e.name === name)
+          || null;
+      }
+      return allApps.find(e => e && e.name === name) || null;
+    }
+
+    function showDetails(appId) {
+      const { name: parsedName, scope: parsedScope } = parseAppId(appId);
+      const app = findApp(appId);
       if (!app) return;
 
       const session = currentSession();
+      const detailScope = parsedScope || app.scope || null;
+      // If the found entry's scope doesn't match the requested scope,
+      // the app is NOT installed in the requested scope
+      const isInstalledInScope = app.installed && (!parsedScope || app.scope === parsedScope);
 
       if (scrollShell) state.lastScrollY = scrollShell.scrollTop || 0;
-      state.currentDetailsApp = app.name;
+      state.currentDetailsApp = appId;
+      state.currentDetailsScope = detailScope;
 
-      const label = app.name.charAt(0).toUpperCase() + app.name.slice(1);
+      const label = (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(app.name) : (app.name.charAt(0).toUpperCase() + app.name.slice(1));
       const version = app.version ? String(app.version) : null;
+      const scopeLabel = detailScope ? (detailScope === 'user' ? t('install.scope.user') : t('install.scope.system')) : '';
 
       if (detailsIcon) {
         detailsIcon.src = getIconUrl(app.name);
@@ -135,10 +171,11 @@
       }
 
       if (detailsName) {
-        const isActuallyInstalled = app.installed && !isInstallRunningFor(session, app.name);
-        detailsName.innerHTML = isActuallyInstalled
-          ? `${label}${version ? ' · ' + version : ''}`
-          : (version ? `${label} · ${version}` : label);
+        const versionPart = version ? ' · ' + version : '';
+        const scopePart = detailScope ? ' <span class="updated-scope-tag">(' + scopeLabel + ')</span>' : '';
+        detailsName.innerHTML = isInstalledInScope
+          ? `${label}${versionPart}${scopePart}`
+          : (version ? `${label} · ${version}${scopePart}` : label + scopePart);
         detailsName.dataset.app = app.name.toLowerCase();
       }
 
@@ -149,7 +186,7 @@
       } catch (_) {}
 
       if (detailsInstallBtn) {
-        detailsInstallBtn.hidden = !!app.installed;
+        detailsInstallBtn.hidden = isInstalledInScope;
         detailsInstallBtn.setAttribute('data-name', app.name);
         detailsInstallBtn.classList.remove('loading');
         detailsInstallBtn.disabled = false;
@@ -164,6 +201,8 @@
         }
         refreshAllInstallButtons();
       }
+
+      updateScopeButtonUI();
 
       if (installStream) {
         if (isInstallRunningFor(session, app.name)) {
@@ -186,8 +225,9 @@
       }
 
       if (detailsUninstallBtn) {
-        detailsUninstallBtn.hidden = !app.installed;
+        detailsUninstallBtn.hidden = !isInstalledInScope;
         detailsUninstallBtn.disabled = false;
+        detailsUninstallBtn.classList.remove('loading');
         detailsUninstallBtn.setAttribute('data-name', app.name);
       }
 
@@ -203,6 +243,7 @@
     }
 
     function exitDetailsView() {
+      onExitDetails();
       if (appDetailsSection) appDetailsSection.hidden = true;
       document.body.classList.remove('details-mode');
       if (appsContainer) appsContainer.hidden = false;
@@ -245,9 +286,10 @@
             }
             showToast(t('toast.cancelRequested'));
             try {
-              await window.electronAPI.amAction('uninstall', name);
+              const scope = state.currentDetailsScope || getInstallScope();
+              await window.electronAPI.amAction('uninstall', name, scope);
               await loadApps();
-              showDetails(name);
+              showDetails(state.currentDetailsApp || name);
             } catch (_) {}
             return;
           }
@@ -273,9 +315,10 @@
         });
         if (!confirmed) return;
 
+        const scope = state.currentDetailsScope || getInstallScope();
         const refreshedSession = currentSession();
         if (refreshedSession.id && !refreshedSession.done) {
-          enqueueInstall(name);
+          enqueueInstall(name, scope);
           detailsInstallBtn.classList.remove('loading');
           refreshAllInstallButtons();
           return;
@@ -284,12 +327,13 @@
         detailsInstallBtn.classList.remove('loading');
         detailsInstallBtn.disabled = false;
         detailsInstallBtn.setAttribute('aria-label', t('install.cancel') || `Annuler installation en cours (${name})`);
-        enqueueInstall(name);
+        enqueueInstall(name, scope);
       });
 
       detailsUninstallBtn?.addEventListener('click', async () => {
         const name = detailsUninstallBtn.getAttribute('data-name');
         if (!name) return;
+        const scope = state.currentDetailsScope;
         const confirmed = await openActionConfirm({
           title: t('confirm.uninstallTitle'),
           message: t('confirm.uninstallMsg', { name: `<strong>${name}</strong>` }),
@@ -301,12 +345,13 @@
         detailsUninstallBtn.disabled = true;
         showToast(t('toast.uninstalling', { name }));
         try {
-          await window.electronAPI.amAction('uninstall', name);
-        } finally {
-          await loadApps();
-          showDetails(name);
-          detailsUninstallBtn.classList.remove('loading');
-        }
+          await window.electronAPI.amAction('uninstall', name, scope);
+        } catch (_) {}
+        // Always refresh and update UI
+        const appId = name + '|' + scope;
+        await loadApps();
+        await new Promise(r => setTimeout(r, 100));
+        showDetails(appId);
       });
     }
 

@@ -1,11 +1,9 @@
+const { tErr } = require('./trayI18n');
 const path = require('path');
 const fs = require('fs');
 const fsp = fs.promises;
 const undici = require('undici');
 
-const projectRoot = path.resolve(__dirname, '..', '..');
-const categoriesCachePath = path.join(projectRoot, 'categories-cache.json');
-const categoriesMetaPath = path.join(projectRoot, 'categories-cache.meta.json');
 const MAX_CATEGORY_FETCH_CONCURRENCY = 6;
 
 async function readJsonSafe(filePath, fallback) {
@@ -29,14 +27,6 @@ async function writeJsonSafe(filePath, data) {
   const tmpPath = `${filePath}.tmp`;
   await fsp.writeFile(tmpPath, payload, 'utf8');
   await fsp.rename(tmpPath, filePath);
-}
-
-async function updateCategoriesCache(categories) {
-  try {
-    await writeJsonSafe(categoriesCachePath, categories);
-  } catch (e) {
-    console.error('Erreur écriture cache catégories:', e);
-  }
 }
 
 async function mapWithConcurrency(limit, items, iteratorFn) {
@@ -76,8 +66,18 @@ function parseApps(markdown) {
   return apps;
 }
 
-function registerCategoryHandlers(ipcMain) {
+function registerCategoryHandlers(ipcMain, cacheDir) {
   if (!ipcMain) throw new Error('ipcMain instance is required');
+  const categoriesCachePath = path.join(cacheDir, 'categories-cache.json');
+  const categoriesMetaPath = path.join(cacheDir, 'categories-cache.meta.json');
+
+  async function updateCategoriesCache(categories) {
+    try {
+      await writeJsonSafe(categoriesCachePath, categories);
+    } catch (e) {
+      console.error('Error writing categories cache:', e);
+    }
+  }
 
   ipcMain.handle('delete-categories-cache', async () => {
     try {
@@ -108,7 +108,7 @@ function registerCategoryHandlers(ipcMain) {
       ]);
       const previousByName = new Map((prevCategories || []).map((cat) => [cat.name, Array.isArray(cat.apps) ? cat.apps : []]));
       const res = await fetch(apiBase, { headers: { 'User-Agent': 'AM-GUI' } });
-      if (!res.ok) throw new Error('Erreur requête GitHub: ' + res.status);
+      if (!res.ok) throw new Error(tErr('errGitHubRequest', 'GitHub request error: {msg}', { msg: res.status }));
       const files = await res.json();
       const mdFiles = files.filter((f) => {
         if (!f.name.endsWith('.md')) return false;
@@ -117,7 +117,7 @@ function registerCategoryHandlers(ipcMain) {
         if (lower.includes('readme') || lower.includes('changelog') || lower.includes('contribut')) return false;
         return true;
       });
-      if (!mdFiles.length) throw new Error('Aucune catégorie trouvée');
+      if (!mdFiles.length) throw new Error(tErr('errNoCategories', 'No categories found'));
 
       const nextMeta = {};
       const results = await mapWithConcurrency(
@@ -134,7 +134,7 @@ function registerCategoryHandlers(ipcMain) {
           try {
             mdResponse = await fetch(`${rawBase}/${file.name}`, { headers });
           } catch (err) {
-            console.warn('[categories] fetch échoué pour', file.name, err?.message || err);
+            console.warn('[categories] fetch failed for', file.name, err?.message || err);
             if (previousMeta) nextMeta[file.name] = previousMeta;
             return null;
           }
@@ -169,7 +169,7 @@ function registerCategoryHandlers(ipcMain) {
       const finalMeta = Object.keys(nextMeta).length ? nextMeta : prevMeta || {};
       await Promise.all([
         updateCategoriesCache(finalCategories),
-        writeJsonSafe(categoriesMetaPath, finalMeta).catch((err) => console.warn('Erreur écriture meta catégories:', err))
+        writeJsonSafe(categoriesMetaPath, finalMeta).catch((err) => console.warn('Error writing categories meta:', err))
       ]);
       return { ok: true, categories: finalCategories };
     } catch (e) {
@@ -180,7 +180,7 @@ function registerCategoryHandlers(ipcMain) {
   ipcMain.handle('fetch-first-category', async () => {
     try {
       const res = await fetch(apiBase, { headers: { 'User-Agent': 'AM-GUI' } });
-      if (!res.ok) throw new Error('Erreur requête GitHub: ' + res.status);
+      if (!res.ok) throw new Error(tErr('errGitHubRequest', 'GitHub request error: {msg}', { msg: res.status }));
       const files = await res.json();
       const mdFiles = files.filter((f) => {
         if (!f.name.endsWith('.md')) return false;
@@ -188,11 +188,11 @@ function registerCategoryHandlers(ipcMain) {
         if (lower.includes('readme') || lower.includes('changelog') || lower.includes('contribut')) return false;
         return true;
       });
-      if (!mdFiles.length) throw new Error('Aucune catégorie trouvée');
+      if (!mdFiles.length) throw new Error(tErr('errNoCategories', 'No categories found'));
       const file = mdFiles[0];
       const catName = file.name.replace(/\.md$/, '');
       const mdRes = await fetch(`${rawBase}/${file.name}`, { headers: { 'User-Agent': 'AM-GUI' } });
-      if (!mdRes.ok) throw new Error('Erreur requête GitHub: ' + mdRes.status);
+      if (!mdRes.ok) throw new Error(tErr('errGitHubRequest', 'GitHub request error: {msg}', { msg: mdRes.status }));
       const mdText = await mdRes.text();
       const apps = parseApps(mdText);
       return { ok: true, category: { name: catName, apps } };

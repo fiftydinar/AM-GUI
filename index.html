@@ -57,6 +57,12 @@
             <div class="settings-title" data-i18n="settings.gpuTitle">Accélération GPU</div>
             <label style="font-size:13px;"><input type="checkbox" id="disableGpuCheckbox"> <span data-i18n="settings.gpuLabel">Désactiver l'accélération GPU (pour corriger les bugs graphiques)</span></label>
           </div>
+          <div class="settings-group" id="installScopeSettingsGroup" hidden>
+            <div class="settings-title" data-i18n="settings.installScope">Install scope</div>
+            <label><input type="radio" name="installScopePref" value="user" checked> <span data-i18n="install.scope.user">User</span></label>
+            <label><input type="radio" name="installScopePref" value="system"> <span data-i18n="install.scope.system">System</span></label>
+            <div class="settings-hint" data-i18n="settings.installScopeHint">Only applies when using AM, not AppMan.</div>
+          </div>
           <div class="settings-separator"></div>
           <div class="settings-group">
             <div style="margin-top:10px; display:flex; flex-direction:column; gap:6px;">
@@ -67,9 +73,9 @@
         </div>
       </div>
       <div class="window-buttons" aria-label="Fenêtre">
-    <button class="win-btn" data-action="min" title="Réduire" data-i18n-title="window.min">–</button>
-    <button class="win-btn" data-action="max" title="Maximiser / Restaurer" data-i18n-title="window.max">⬜</button>
-    <button class="win-btn win-close" data-action="close" title="Fermer" data-i18n-title="window.close">×</button>
+        <button class="win-btn" data-action="min" title="Réduire" data-i18n-title="window.min">–</button>
+        <button class="win-btn" data-action="max" title="Maximiser / Restaurer" data-i18n-title="window.max"><svg width="11" height="11" viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1"><rect x="1" y="1" width="9" height="9" rx="1"/></svg></button>
+        <button class="win-btn win-close" data-action="close" title="Fermer" data-i18n-title="window.close">×</button>
       </div>
     </div>
   </header>
@@ -199,6 +205,7 @@
           <button id="detailsInstallBtn" class="btn btn-primary" data-i18n="details.install">Installer</button>
           <button id="detailsForceCancelBtn" class="btn btn-outline danger" title="Forcer l'annulation" aria-label="Forcer l'annulation" hidden style="padding:6px 10px;">✕</button>
           <button id="detailsUninstallBtn" class="btn btn-outline" data-i18n="details.uninstall">Désinstaller</button>
+          <button id="installScopeBtn" class="btn btn-outline" type="button" hidden>👤 <span data-i18n="install.scope.user">User</span></button>
           <button id="sandboxOpenBtn" class="btn btn-soft-neutral sandbox-toggle-btn" type="button">
             <span data-i18n="sandbox.title">Sandbox</span>
             <span id="sandboxButtonStatus" class="sandbox-pill" data-status="unknown">—</span>
@@ -358,6 +365,9 @@
   <script src="src/renderer/features/categories/index.js"></script>
   <script src="src/renderer/features/search/index.js"></script>
   <script src="src/renderer/features/details/index.js"></script>  <script src="src/renderer/features/featured/index.js"></script>  <script src="src/renderer/ui/syncButton.js"></script>
+  <script src="node_modules/@xterm/xterm/lib/xterm.js"></script>
+  <script src="node_modules/@xterm/addon-fit/lib/addon-fit.js"></script>
+  <script src="src/renderer/xterm-globals.js"></script>
   <script src="src/renderer/renderer.js"></script>
   <!-- Modale choix installation multiple -->
   <div id="multiChoiceModal" class="modal" role="dialog" aria-modal="true" aria-label="Choix d'installation" hidden>

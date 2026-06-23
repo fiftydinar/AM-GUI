@@ -17,6 +17,7 @@
     const applySandboxBadge = typeof options.applySandboxBadge === 'function'
       ? options.applySandboxBadge
       : () => {};
+    const prettify = typeof options.prettify === 'function' ? options.prettify : null;
 
     const loadedIcons = new Set();
     let appListVirtual = [];
@@ -113,8 +114,13 @@
       const section = documentRef.createElement('div');
       section.className = 'installed-section';
       const title = documentRef.createElement('h4');
-      const key = sectionKey === 'sandboxed' ? 'installed.section.sandboxed' : 'installed.section.others';
-      title.textContent = t(key);
+      const keyMap = {
+        sandboxed: 'installed.section.sandboxed',
+        others: 'installed.section.others',
+        system: 'installed.section.system',
+        user: 'installed.section.user'
+      };
+      title.textContent = t(keyMap[sectionKey] || 'installed.section.others');
       section.appendChild(title);
       return section;
     }
@@ -124,10 +130,12 @@
         return buildInstalledSection(item.__section);
       }
       const { name, installed, desc } = typeof item === 'string' ? { name: item, installed: false, desc: null } : item;
-      const label = name.charAt(0).toUpperCase() + name.slice(1);
+      const scope = item?.scope || null;
+      const appId = scope ? name + '|' + scope : name;
+      const label = prettify ? prettify(name) : name.charAt(0).toUpperCase() + name.slice(1);
       const version = item?.version ? String(item.version) : null;
       const session = getActiveInstallSession() || {};
-      let shortDesc = desc || (installed ? 'Déjà présente localement.' : 'Disponible pour installation.');
+      let shortDesc = desc || (installed ? t('installed.localDesc') : t('installed.availableDesc'));
       if (shortDesc.length > 110) shortDesc = shortDesc.slice(0,107).trim() + '…';
       let actionsHTML = '';
       if (state.viewMode === 'list') {        
@@ -152,13 +160,13 @@
           stateBadge = ' <span class="install-state-badge installing" data-state="installing">Installation…<button class="queue-remove-badge inline-action" data-action="cancel-install" data-app="'+name+'" title="Annuler" aria-label="Annuler">✕</button></span>';
         } else {
           const pos = getQueuePosition(name);
-          if (pos !== -1) stateBadge = ' <span class="install-state-badge queued" data-state="queued">En file (#'+pos+')<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="Retirer de la file" aria-label="Retirer">✕</button></span>';
+          if (pos !== -1) stateBadge = ' <span class="install-state-badge queued" data-state="queued">En file (#'+pos+')<button class="queue-remove-badge inline-action" data-action="remove-queue" data-app="'+name+'" title="'+t('queue.removeBadge')+'" aria-label="'+t('queue.removeBadgeAria')+'">✕</button></span>';
         }
       }
       const tile = documentRef.createElement('div');
       tile.className = 'app-tile';
-      tile.setAttribute('data-app', name);
-      const badgeHTML = installed ? '<span class="installed-badge" aria-label="Installée" title="Installée" style="position:absolute;top:2px;right:2px;">✓</span>' : '';
+      tile.setAttribute('data-app', appId);
+      const badgeHTML = installed ? '<span class="installed-badge" aria-label="'+t('installed.badge')+'" title="'+t('installed.badge')+'" style="position:absolute;top:2px;right:2px;">✓</span>' : '';
       tile.innerHTML = `
         <div class="tile-icon" style="position:relative;display:inline-block;">
           <img data-src="${getIconUrl(name)}" alt="${label}" loading="lazy" decoding="async"${state.viewMode==='icons' ? ' class="icon-mode"' : ''}>
@@ -197,13 +205,13 @@
       tile.tabIndex = 0;
       tile.addEventListener('click', (ev) => {
         if (ev.target.closest('.inline-action')) return;
-        showDetails(name);
+        showDetails(appId);
       });
       tile.addEventListener('keydown', (ev) => {
         if (ev.key === 'Enter' || ev.key === ' ') {
           if (ev.target.closest('.inline-action')) return;
           ev.preventDefault();
-          showDetails(name);
+          showDetails(appId);
         }
       });
       return tile;

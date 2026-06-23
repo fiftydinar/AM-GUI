@@ -7,6 +7,7 @@ ARCH=$(uname -m)
 echo "Installing package dependencies..."
 echo "---------------------------------------------------------------"
 pacman -Syu --noconfirm  \
+            patchelf     \
             python       \
             nss          \
             at-spi2-core
@@ -31,7 +32,11 @@ curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.3/install.sh | bash
           npm run dist
 
 mkdir -p ./AppDir/bin
-cp -rv dist/linux-unpacked/* ./AppDir/bin/
+if [ "$ARCH" = "x86_64" ]; then
+  cp -rv dist/linux-unpacked/* ./AppDir/bin/
+else
+  cp -rv dist/linux-arm64-unpacked/* ./AppDir/bin/
+fi
 cp -v  AM-GUI.png            ./AppDir/.DirIcon
 cp -v  AM-GUI.desktop        ./AppDir
 find ./AppDir/bin/locales -type f ! -name 'en-US.pak' -delete 2>/dev/null || true

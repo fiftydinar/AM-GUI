@@ -123,7 +123,7 @@
   }
 
   function filterInstalled(base) {
-    return base.filter(app => app && app.installed && app.hasDiamond === true);
+    return base.filter(app => app && app.installed);
   }
 
   function filterByCategory(base, category) {
@@ -175,6 +175,15 @@
     } else if (activeCategory === 'installed') {
       resetSearchModeIfNeeded();
       base = filterInstalled(allApps); // uses full allApps to include implied apps
+    } else if (activeCategory === 'all') {
+      // Catalog view: deduplicate by name, then apply a pure alphabetical sort.
+      const byName = new Map();
+      allApps.forEach(app => {
+        if (!app || !app.name) return;
+        const key = app.name.toLowerCase();
+        if (!byName.has(key)) byName.set(key, app);
+      });
+      base = Array.from(byName.values()).sort((a, b) => String(a?.name || '').localeCompare(String(b?.name || ''), undefined, { sensitivity: 'base' }));
     } else if (activeCategory !== 'all') {
       resetSearchModeIfNeeded();
       base = filterByCategory(allApps, activeCategory);
@@ -182,21 +191,31 @@
 
     const filtered = filterByQuery(base);
     let renderList = filtered;
-    if (activeCategory === 'installed' && typeof isSandboxed === 'function') {
-      const sandboxed = [];
-      const others = [];
-      filtered.forEach(app => {
-        if (isSandboxed(app?.name)) sandboxed.push(app);
-        else others.push(app);
-      });
-      renderList = [];
-      if (sandboxed.length) {
-        renderList.push({ __section: 'sandboxed' });
-        renderList.push(...sandboxed);
-      }
-      if (others.length) {
-        renderList.push({ __section: 'others' });
-        renderList.push(...others);
+    if (activeCategory === 'installed') {
+      // Scope-based grouping (am mode): system vs user apps
+      const hasScopeInfo = filtered.some(app => app && app.scope);
+      if (hasScopeInfo) {
+        const system = [];
+        const user = [];
+        const unknown = [];
+        filtered.forEach(app => {
+          if (app?.scope === 'system') system.push(app);
+          else if (app?.scope === 'user') user.push(app);
+          else unknown.push(app);
+        });
+        renderList = [];
+        if (system.length) {
+          renderList.push({ __section: 'system' });
+          renderList.push(...system);
+        }
+        if (user.length) {
+          renderList.push({ __section: 'user' });
+          renderList.push(...user);
+        }
+        if (unknown.length) {
+          renderList.push({ __section: 'others' });
+          renderList.push(...unknown);
+        }
       }
     }
     stateRef.filtered = filtered;

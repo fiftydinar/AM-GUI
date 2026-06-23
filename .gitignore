@@ -14,3 +14,7 @@ yarn-error.log*
 # Fichiers de build
 dist/
 build/
+
+# Cache local des catégories (généré automatiquement)
+categories-cache.json
+categories-cache.meta.json

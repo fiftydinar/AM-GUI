@@ -93,9 +93,9 @@
     container.innerHTML = `
       <div class="featured-inner">
         <div class="featured-controls">
-          <button class="featured-prev" aria-label="Previous">◀</button>
+          <button class="featured-prev" aria-label="${t('featured.prev')}">◀</button>
           <div class="featured-slot"></div>
-          <button class="featured-next" aria-label="Next">▶</button>
+          <button class="featured-next" aria-label="${t('featured.next')}">▶</button>
         </div>
         <div class="featured-dots" aria-hidden="true"></div>
       </div>`;
@@ -237,7 +237,7 @@
           const j = Math.floor(Math.random() * (i + 1)); const tmp = a[i]; a[i] = a[j]; a[j] = tmp;
         }
         const picked = a.slice(0, 5);
-        const mapped = picked.map(app => ({ name: app.name, title: app.name ? (app.name.charAt(0).toUpperCase()+app.name.slice(1)) : (app?.title||app?.name||''), desc: app?.desc || app?.short || '', color: (featuredConfig.find(f => f.name === app.name) || {}).color || '' }));
+        const mapped = picked.map(app => ({ name: app.name, title: (window.utils && typeof window.utils.prettifyAppName === 'function') ? window.utils.prettifyAppName(app.name) : (app.name ? (app.name.charAt(0).toUpperCase()+app.name.slice(1)) : (app?.title||app?.name||'')), desc: app?.desc || app?.short || '', color: (featuredConfig.find(f => f.name === app.name) || {}).color || '' }));
         // fallback: only if apps are loaded return static featured
         if (mapped && mapped.length) return mapped;
         if (Array.isArray(state.allApps) && state.allApps.length > 0) return (featuredConfig.length ? featuredConfig : DEFAULT_ITEMS);
