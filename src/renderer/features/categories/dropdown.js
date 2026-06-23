@@ -245,9 +245,13 @@
           const uncategorizedApps = Array.isArray(state.allApps)
             ? state.allApps.filter(app => app && !allCategorizedNames.has(normalizeName(app.name)))
             : [];
-          btnOther.disabled = uncategorizedApps.length === 0;
           btnOther.querySelector('.cat-spinner')?.remove();
+          btnOther.disabled = false;
           btnOther.onclick = () => {
+            if (uncategorizedApps.length === 0) {
+              if (showToast) showToast(translate('categories.empty', { category: translate('categories.other') }));
+              return;
+            }
             closeCategoriesDropdown();
             activateCustomCategory({
               label: 'autre',
