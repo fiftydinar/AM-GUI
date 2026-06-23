@@ -20,12 +20,12 @@ let categoriesBackup = null;
     setImmediate(() => {
       if (isAmLookup) {
         execInvocations += 1;
-        if (fakeCommandState === 'am') return callback(null, '/usr/bin/am');
+        if (fakeCommandState === 'am' || fakeCommandState === 'both') return callback(null, '/usr/bin/am');
         return callback(new Error('am not found'));
       }
       if (isAppmanLookup) {
         execInvocations += 1;
-        if (fakeCommandState === 'appman') return callback(null, '/usr/bin/appman');
+        if (fakeCommandState === 'appman' || fakeCommandState === 'both') return callback(null, '/usr/bin/appman');
         return callback(new Error('appman not found'));
       }
       execInvocations += 1;
@@ -85,16 +85,22 @@ let categoriesBackup = null;
     const { createIconCacheManager } = require('../src/main/iconCache');
 
     const pmFirst = await detectPackageManager();
-    if (pmFirst !== 'am') throw new Error(`Expected first detection to return "am", got ${pmFirst}`);
+    if (pmFirst.pm !== 'am') throw new Error(`Expected first detection to return "am", got ${pmFirst.pm}`);
     const pmSecond = await detectPackageManager();
-    if (pmSecond !== 'am') throw new Error('Cache should preserve initial detection result');
-    if (execInvocations !== 1) throw new Error(`Expected 1 exec invocation, got ${execInvocations}`);
+    if (pmSecond.pm !== 'am') throw new Error('Cache should preserve initial detection result');
+    if (execInvocations !== 2) throw new Error(`Expected 2 exec invocations (am + appman), got ${execInvocations}`);
 
     invalidatePackageManagerCache();
     fakeCommandState = 'appman';
     const pmThird = await detectPackageManager();
-    if (pmThird !== 'appman') throw new Error(`Expected refreshed detection to return "appman", got ${pmThird}`);
-    if (execInvocations !== 3) throw new Error('Refresh should trigger two extra exec calls (am + appman).');
+    if (pmThird.pm !== 'appman') throw new Error(`Expected refreshed detection to return "appman", got ${pmThird.pm}`);
+    if (execInvocations !== 4) throw new Error('Refresh should trigger two extra exec calls (am + appman).');
+
+    invalidatePackageManagerCache();
+    fakeCommandState = 'both';
+    const pmBoth = await detectPackageManager();
+    if (pmBoth.pm !== 'am') throw new Error(`Expected "am" when both present, got ${pmBoth.pm}`);
+    if (!pmBoth.bothFound) throw new Error('Expected bothFound to be true when both am and appman exist');
 
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'am-gui-icon-test-'));
     const cacheDir = path.join(tempDir, 'icons-cache');

@@ -1,32 +1,35 @@
 const { exec } = require('child_process');
 
 const PM_CACHE_TTL_MS = 60 * 1000;
-let cachedPackageManager = null;
+let cachedResult = null;
 let cachedPmTimestamp = 0;
 
 async function detectPackageManager(forceRefresh = false) {
   const now = Date.now();
   if (!forceRefresh && cachedPmTimestamp && now - cachedPmTimestamp < PM_CACHE_TTL_MS) {
-    return cachedPackageManager;
+    return cachedResult;
   }
 
-  const pm = await new Promise((resolve) => {
-    exec('command -v am', (err) => {
-      if (!err) return resolve('am');
-      exec('command -v appman', (err2) => {
-        if (!err2) return resolve('appman');
-        resolve(null);
-      });
-    });
-  });
+  const [hasAm, hasAppman] = await Promise.all([
+    new Promise((resolve) => {
+      exec('command -v am', (err) => resolve(!err));
+    }),
+    new Promise((resolve) => {
+      exec('command -v appman', (err) => resolve(!err));
+    })
+  ]);
 
-  cachedPackageManager = pm;
+  let pm = null;
+  if (hasAm) pm = 'am';
+  else if (hasAppman) pm = 'appman';
+
+  cachedResult = { pm, bothFound: hasAm && hasAppman };
   cachedPmTimestamp = Date.now();
-  return pm;
+  return cachedResult;
 }
 
 function invalidatePackageManagerCache() {
-  cachedPackageManager = null;
+  cachedResult = null;
   cachedPmTimestamp = 0;
 }
 
