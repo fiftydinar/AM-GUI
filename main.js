@@ -24,7 +24,7 @@ const SANDBOX_DIR_KEYS = ['desktop', 'documents', 'downloads', 'games', 'music',
 const SANDBOX_MARKER = 'aisap-am sandboxing script';
 
 const iconCacheManager = createIconCacheManager(app);
-registerCategoryHandlers(ipcMain);
+registerCategoryHandlers(ipcMain, app.getPath('userData'));
 
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
@@ -898,16 +898,54 @@ ipcMain.handle('list-apps-detailed', async () => {
   // the actual list of installed programs. Run both and merge results.
   const listCmd = `${pm} -l`;
   const installedCmd = `${pm} -f`;
-  const execPromise = (cmd) => new Promise(res => {
-    exec(cmd, (err, stdout) => res({ err, stdout: stdout || '' }));
-  });
   return new Promise(async (resolve) => {
+    let listRes, instRes;
+    let tmpDir1, tmpDir2;
     try {
-      // Run sequentially — not in parallel — because both `am -l` and `am -f`
-      // share the same $AMCACHEDIR/version-args cache file. Running them
-      // concurrently causes one to delete the cache while the other reads it.
-      const listRes = await execPromise(listCmd);
-      const instRes = await execPromise(installedCmd);
+      // appman sets AMCACHEDIR="$CACHEDIR/$AMCLI" where CACHEDIR="${XDG_CACHE_HOME:-$HOME/.cache}".
+      // The AMCACHEDIR env var is IGNORED (overwritten at script line 270), so we must
+      // use XDG_CACHE_HOME to redirect.  Each parallel exec gets its own XDG_CACHE_HOME
+      // pointing to an isolated temp copy of the cache dir.
+      // In AppImage, HOST_XDG_CACHE_HOME holds the host's real value.
+      const realXdgCacheHome = process.env.HOST_XDG_CACHE_HOME || process.env.XDG_CACHE_HOME || path.join(os.homedir(), '.cache');
+      const realPmCacheDir = path.join(realXdgCacheHome, pm);
+
+      tmpDir1 = fs.mkdtempSync(path.join(os.tmpdir(), 'amc-' + pm + '-l-'));
+      fs.mkdirSync(path.join(tmpDir1, pm), { recursive: true });
+      tmpDir2 = fs.mkdtempSync(path.join(os.tmpdir(), 'amc-' + pm + '-f-'));
+      fs.mkdirSync(path.join(tmpDir2, pm), { recursive: true });
+
+      if (fs.existsSync(realPmCacheDir)) {
+        const entries = fs.readdirSync(realPmCacheDir);
+        for (const entry of entries) {
+          if (entry.endsWith('.tmp')) continue;
+          const src = path.join(realPmCacheDir, entry);
+          if (fs.statSync(src).isFile()) {
+            for (const destDir of [tmpDir1, tmpDir2]) {
+              fs.copyFileSync(src, path.join(destDir, pm, entry));
+            }
+          }
+        }
+      }
+
+      [listRes, instRes] = await Promise.all([
+        new Promise(res => exec(listCmd, { env: { ...process.env, XDG_CACHE_HOME: tmpDir1 } }, (err, stdout) => res({ err, stdout: stdout || '' }))),
+        new Promise(res => exec(installedCmd, { env: { ...process.env, XDG_CACHE_HOME: tmpDir2 } }, (err, stdout) => res({ err, stdout: stdout || '' })))
+      ]);
+
+      // Merge cache updates back — prefer the -f result (has fresh version-args + files-*).
+      for (const srcDir of [tmpDir1, tmpDir2]) {
+        const pmSrc = path.join(srcDir, pm);
+        if (fs.existsSync(pmSrc) && fs.existsSync(realPmCacheDir)) {
+          for (const entry of fs.readdirSync(pmSrc)) {
+            if (entry.endsWith('.tmp')) continue;
+            const src = path.join(pmSrc, entry);
+            if (fs.statSync(src).isFile()) {
+              fs.copyFileSync(src, path.join(realPmCacheDir, entry));
+            }
+          }
+        }
+      }
       if ((listRes.err && listRes.err.code === 127) || (instRes.err && instRes.err.code === 127)) {
         invalidatePackageManagerCache();
       }
@@ -1151,6 +1189,9 @@ ipcMain.handle('list-apps-detailed', async () => {
       return resolve({ installed, all, pmFound: true, pmName: pm, bundleChildOf });
     } catch (e) {
       return resolve({ installed: [], all: [], pmFound: true, error: tErr('errInternalParsing', 'Internal parsing error.') });
+    } finally {
+      try { if (tmpDir1) fs.rmSync(tmpDir1, { recursive: true, force: true }); } catch (_) {}
+      try { if (tmpDir2) fs.rmSync(tmpDir2, { recursive: true, force: true }); } catch (_) {}
     }
   });
 });

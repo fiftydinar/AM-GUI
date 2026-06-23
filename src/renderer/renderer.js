@@ -2143,6 +2143,13 @@ window.addEventListener('DOMContentLoaded', async () => {
   try {
     initMarkdownLightbox();
     initIconObserver();
+    // Ensure spinner and results are hidden at startup
+    setUpdateSpinnerBusy(false);
+    if (updateResult) updateResult.style.display = 'none';
+    // Force list view at startup
+    if (appDetailsSection) appDetailsSection.hidden = true;
+    document.body.classList.remove('details-mode');
+    if (appsDiv) appsDiv.hidden = false;
     const loadAppsPromise = loadApps();
     if (window.categories && typeof window.categories.initDropdown === 'function') {
       window.categories.initDropdown({
@@ -2186,6 +2193,11 @@ window.addEventListener('DOMContentLoaded', async () => {
     }
     initLanguagePreferences();
     await loadAppsPromise;
+    // Restore any previous detail (session) if still present
+    const last = sessionStorage.getItem('lastDetailsApp');
+    if (last && (state.allApps.find(a => a.name === last) || state.allApps.find(a => (a.scope ? a.name + '|' + a.scope : a.name) === last))) {
+      showDetails(last);
+    }
     if (state.allApps && state.allApps.length > 0) {
       showToast(t('categories.allAppsCount', { count: state.allApps.length }));
     }
@@ -2701,22 +2713,8 @@ window.addEventListener('keydown', (e) => {
 
 
 
+// Handle interactive choice prompt during installation
 (async () => {
-  await loadApps();
-  // Ensure spinner and results are hidden at startup
-  setUpdateSpinnerBusy(false);
-  if (updateResult) updateResult.style.display = 'none';
-  // Force list view at startup
-  if (appDetailsSection) appDetailsSection.hidden = true;
-  document.body.classList.remove('details-mode');
-  if (appsDiv) appsDiv.hidden = false;
-  // Restore any previous detail (session) if still present
-  const last = sessionStorage.getItem('lastDetailsApp');
-  if (last && (state.allApps.find(a => a.name === last) || state.allApps.find(a => (a.scope ? a.name + '|' + a.scope : a.name) === last))) {
-    showDetails(last);
-  }
-
-  // Handle interactive choice prompt during installation
   window.electronAPI?.onInstallProgress?.((data) => {
     // Initialize install session on receiving 'start'
     if (data.kind === 'start' && data.id) {
