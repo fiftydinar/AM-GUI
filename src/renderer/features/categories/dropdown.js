@@ -209,10 +209,14 @@
         const categories = await cacheApi.load({ showToast });
         categories.forEach(({ name, apps }) => {
           const btn = createCategoryButton(name, () => {
-            closeCategoriesDropdown();
             const filteredApps = Array.isArray(apps)
               ? apps.filter(appName => typeof appName === 'string' && appName.trim().length > 0)
               : [];
+            if (filteredApps.length === 0) {
+              if (showToast) showToast(translate('categories.empty', { category: name }));
+              return;
+            }
+            closeCategoriesDropdown();
             const detailedApps = filteredApps.map(appName => {
               const found = Array.isArray(state.allApps)
                 ? state.allApps.find(candidate => candidate && normalizeName(candidate.name) === normalizeName(appName))
