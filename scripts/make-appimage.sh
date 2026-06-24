@@ -11,7 +11,9 @@ export UPINFO="gh-releases-zsync|${GITHUB_REPOSITORY%/*}|${GITHUB_REPOSITORY#*/}
 
 # Deploy dependencies
 quick-sharun \
-             ./AppDir/bin/*  
+             ./AppDir/bin/* \
+             /usr/bin/ps \
+             /usr/bin/grep
              
 # Additional changes can be done in between here
 

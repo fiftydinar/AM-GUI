@@ -3438,12 +3438,14 @@ async function fetchUpdatesOutput(){
     try {
       return await startUpdatesStream();
     } catch (err) {
+      if (err?.error === 'external-update-running' || err?.message === 'external-update-running') throw err;
       console.warn('Streaming updates failed, fallback to am-action', err);
       activeUpdateStreamId = null;
     }
   }
   if (!window.electronAPI?.amAction) return { output: '' };
   const res = await window.electronAPI.amAction('__update_all__');
+  if (res === 'external-update-running') throw new Error('external-update-running');
   const output = typeof res === 'string' ? res : (res ? String(res) : '');
   if (output) {
     revealUpdatesTerminal();
@@ -3474,8 +3476,13 @@ runUpdatesBtn?.addEventListener('click', async () => {
     await refreshAfterUpdates();
   } catch (err) {
     console.error('Updates failed', err);
-    showToast(t('toast.updateFailed') || t('error.global', { msg: 'Update failed' }));
-    if (updateFinalMessage) updateFinalMessage.textContent = t('updates.error') || t('error.global', { msg: 'Error during update' });
+    if (err?.error === 'external-update-running' || err?.message === 'external-update-running') {
+      showToast(t('toast.updateAlreadyRunning'));
+      if (updateFinalMessage) updateFinalMessage.textContent = t('toast.updateAlreadyRunningDetail');
+    } else {
+      showToast(t('toast.updateFailed') || t('error.global', { msg: 'Update failed' }));
+      if (updateFinalMessage) updateFinalMessage.textContent = t('updates.error') || t('error.global', { msg: 'Error during update' });
+    }
     if (updateResult) updateResult.style.display = 'block';
   } finally {
     updateInProgress = false;

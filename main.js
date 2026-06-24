@@ -26,6 +26,13 @@ const SANDBOX_MARKER = 'aisap-am sandboxing script';
 const iconCacheManager = createIconCacheManager(app);
 registerCategoryHandlers(ipcMain, app.getPath('userData'));
 
+async function isExternalUpdateRunning(pm) {
+  return new Promise((resolve) => {
+    const pat = `[/ ](am|appman) +(-[uU]|update|upgrade)`;
+    exec(`ps aux | grep -v grep | grep -E -q "${pat}"`, (err) => resolve(!err));
+  });
+}
+
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -475,6 +482,7 @@ ipcMain.handle('am-action', async (event, action, software, scope) => {
   if (!pm) return tErr('errNoPm', "No 'am' or 'appman' package manager found");
 
   if (action === '__update_all__') {
+    if (await isExternalUpdateRunning(pm)) return tErr('errExternalUpdateRunning', 'AM/Appman update is already running in the background');
     return new Promise((resolve) => {
       const child = spawn(pm, ['-u']);
       let stdoutBuf = '';
@@ -779,6 +787,7 @@ ipcMain.handle('install-cancel', async (event, installId) => {
 ipcMain.handle('updates-start', async (event) => {
   const { pm } = await detectPackageManager();
   if (!pm) return { error: tErr('errNoPm', "No 'am' or 'appman' package manager found") };
+  if (await isExternalUpdateRunning(pm)) return { error: 'external-update-running' };
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
   let child;
   let output = '';
