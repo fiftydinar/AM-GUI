@@ -26,6 +26,13 @@ const SANDBOX_MARKER = 'aisap-am sandboxing script';
 const iconCacheManager = createIconCacheManager(app);
 registerCategoryHandlers(ipcMain, app.getPath('userData'));
 
+async function isExternalUpdateRunning(pm) {
+  return new Promise((resolve) => {
+    const pat = `[/ ](am|appman) +(-[uU]|update|upgrade)`;
+    exec(`ps aux | grep -v grep | grep -E -q "${pat}"`, (err) => resolve(!err));
+  });
+}
+
 // --- Single instance lock ---
 const gotTheLock = app.requestSingleInstanceLock();
 if (!gotTheLock) {
@@ -471,10 +478,11 @@ ipcMain.handle('open-external', async (_event, url) => {
 
 // Generic action: install / uninstall / update (simple)
 ipcMain.handle('am-action', async (event, action, software, scope) => {
-  const pm = await detectPackageManager();
+  const { pm } = await detectPackageManager();
   if (!pm) return tErr('errNoPm', "No 'am' or 'appman' package manager found");
 
   if (action === '__update_all__') {
+    if (await isExternalUpdateRunning(pm)) return tErr('errExternalUpdateRunning', 'AM/Appman update is already running in the background');
     return new Promise((resolve) => {
       const child = spawn(pm, ['-u']);
       let stdoutBuf = '';
@@ -606,7 +614,7 @@ ipcMain.on('password-response', (event, payload) => {
 });
 ipcMain.handle('install-start', async (event, name, scope) => {
   console.log('IPC install-start reçu pour', name);
-  const pm = await detectPackageManager();
+  const { pm } = await detectPackageManager();
   // Log le lancement du processus
   const installArgs = scope === 'user' ? ['-i', '--user', name] : ['-i', name];
   console.log('Process started:', pm, installArgs);
@@ -777,8 +785,9 @@ ipcMain.handle('install-cancel', async (event, installId) => {
 });
 
 ipcMain.handle('updates-start', async (event) => {
-  const pm = await detectPackageManager();
+  const { pm } = await detectPackageManager();
   if (!pm) return { error: tErr('errNoPm', "No 'am' or 'appman' package manager found") };
+  if (await isExternalUpdateRunning(pm)) return { error: 'external-update-running' };
   const id = Date.now().toString(36) + '-' + Math.random().toString(36).slice(2,8);
   let child;
   let output = '';
@@ -889,9 +898,12 @@ ipcMain.handle('install-appman-auto', async () => {
 
 // Detailed list: distinguish installed vs catalog
 ipcMain.handle('list-apps-detailed', async () => {
-  const pm = await detectPackageManager();
+  const { pm, bothFound } = await detectPackageManager();
   if (!pm) {
     return { installed: [], all: [], pmFound: false, error: tErr('errNoPmPath', "No 'am' or 'appman' package manager detected in PATH.") };
+  }
+  if (bothFound) {
+    return { installed: [], all: [], pmFound: true, pmName: pm, bothPms: true, bundleChildOf: {} };
   }
   // We call both `pm -l` (catalog) and `pm -f` (installed files list). Some pm implementations
   // (notably appman) print only a summary in `-l` and not the installed items — `-f` contains
@@ -1186,7 +1198,7 @@ ipcMain.handle('list-apps-detailed', async () => {
           desc: catalogDesc.get(entry.name) || null,
           scope: entry.scope || null
         }));
-      return resolve({ installed, all, pmFound: true, pmName: pm, bundleChildOf });
+      return resolve({ installed, all, pmFound: true, pmName: pm, bothPms: !!bothFound, bundleChildOf });
     } catch (e) {
       return resolve({ installed: [], all: [], pmFound: true, error: tErr('errInternalParsing', 'Internal parsing error.') });
     } finally {
@@ -1198,7 +1210,7 @@ ipcMain.handle('list-apps-detailed', async () => {
 
 ipcMain.handle('sandbox-info', async (_event, appName) => {
   const deps = await detectSandboxDependencies();
-  const pm = await detectPackageManager();
+  const { pm } = await detectPackageManager();
   const response = {
     ok: true,
     dependencies: deps,
@@ -1236,7 +1248,7 @@ ipcMain.handle('sandbox-info', async (_event, appName) => {
 });
 
 ipcMain.handle('sandbox-configure', async (event, payload = {}) => {
-  const pm = await detectPackageManager();
+  const { pm } = await detectPackageManager();
   if (!pm) return { ok: false, error: tErr('errMissingPm', 'missing-pm') };
   const deps = await detectSandboxDependencies();
   if (!deps.hasSas && !deps.hasAisap) {
@@ -1273,7 +1285,7 @@ ipcMain.handle('sandbox-configure', async (event, payload = {}) => {
 });
 
 ipcMain.handle('sandbox-disable', async (event, payload = {}) => {
-  const pm = await detectPackageManager();
+  const { pm } = await detectPackageManager();
   if (!pm) return { ok: false, error: tErr('errMissingPm', 'missing-pm') };
   const normalizedName = typeof payload.appName === 'string' ? payload.appName.trim() : '';
   if (!normalizedName) return { ok: false, error: tErr('errInvalidApp', 'invalid-app') };

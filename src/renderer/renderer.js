@@ -1984,6 +1984,66 @@ function hideMissingPmPopup() {
   pmPopupCtrl.hide();
 }
 
+let bothPmsPopupCtrl = null;
+function showBothPmsPopup(show) {
+  if (!show) {
+    if (bothPmsPopupCtrl) {
+      bothPmsPopupCtrl.hide();
+      bothPmsPopupCtrl = null;
+    }
+    return;
+  }
+  if (bothPmsPopupCtrl) { bothPmsPopupCtrl.show(); return; }
+  if (!document?.body) return;
+  const layer = document.createElement('div');
+  layer.className = 'pm-popup-layer';
+  layer.setAttribute('aria-hidden', 'true');
+  layer.innerHTML = `
+    <section class="pm-popup-panel" role="dialog" aria-modal="true">
+      <button class="pm-popup-close" type="button" data-action="dismiss" aria-label="${t('modal.close') || 'Close'}">×</button>
+      <p class="pm-popup-desc pm-popup-desc--intro">${t('bothPms.popup.desc')}</p>
+      <div class="pm-popup-options">
+        <article class="pm-popup-option pm-popup-option--manual">
+          <div>
+            <h3>${t('bothPms.popup.removeTitle')}</h3>
+            <p>${t('bothPms.popup.removeDesc')}</p>
+          </div>
+        </article>
+      </div>
+      <footer class="pm-popup-footer">
+        <button type="button" class="btn-link" data-action="docs-link">${t('missingPm.popup.docs')}</button>
+        <span class="pm-popup-status" data-status>${t('bothPms.popup.statusIdle')}</span>
+      </footer>
+    </section>`;
+  document.body.appendChild(layer);
+  const dismissBtn = layer.querySelector('[data-action="dismiss"]');
+  const docsBtn = layer.querySelector('[data-action="docs-link"]');
+  const statusEl = layer.querySelector('[data-status]');
+
+  layer.addEventListener('click', (ev) => {
+    if (ev.target === layer) { bothPmsPopupCtrl?.hide(); bothPmsPopupCtrl = null; }
+  });
+  dismissBtn?.addEventListener('click', () => { bothPmsPopupCtrl?.hide(); bothPmsPopupCtrl = null; });
+  docsBtn?.addEventListener('click', openPmDocs);
+
+  bothPmsPopupCtrl = {
+    layer,
+    show() {
+      layer.classList.add('open');
+      layer.setAttribute('aria-hidden', 'false');
+      document.body.classList.add('pm-popup-open');
+      if (statusEl) statusEl.textContent = t('bothPms.popup.statusIdle');
+      setTimeout(() => dismissBtn?.focus(), 60);
+    },
+    hide() {
+      layer.classList.remove('open');
+      layer.setAttribute('aria-hidden', 'true');
+      document.body.classList.remove('pm-popup-open');
+    }
+  };
+  bothPmsPopupCtrl.show();
+}
+
 function applyTranslations() {
   const popupWasOpen = !!(pmPopupCtrl?.layer && pmPopupCtrl.layer.classList.contains('open'));
   if (pmPopupCtrl?.layer) {
@@ -1991,6 +2051,13 @@ function applyTranslations() {
     document.body?.classList.remove('pm-popup-open');
     pmPopupCtrl = null;
     pmPopupStatus = null;
+  }
+  // Rebuild both-PMs popup if it was open
+  if (bothPmsPopupCtrl) {
+    const wasOpen = bothPmsPopupCtrl.layer.classList.contains('open');
+    try { bothPmsPopupCtrl.layer.remove(); } catch(_) {}
+    bothPmsPopupCtrl = null;
+    if (wasOpen) showBothPmsPopup(true);
   }
   // Dynamic detail buttons (install/uninstall)
   if (detailsInstallBtn) detailsInstallBtn.textContent = t('details.install');
@@ -2299,6 +2366,20 @@ async function loadApps() {
     return;
   }
   hideMissingPmPopup();
+  if (detailed.bothPms) {
+    state.allApps = [];
+    state.filtered = [];
+    showBothPmsPopup(true);
+    if (appsDiv) {
+      appsDiv.innerHTML = `<div class="empty-state pm-empty-placeholder"><p>${t('bothPms.popup.desc')}</p></div>`;
+    }
+    if (installedCountEl) installedCountEl.textContent = '0';
+    sandboxedApps.clear();
+    refreshAllSandboxBadges();
+    appsDiv?.setAttribute('aria-busy','false');
+    return;
+  }
+  showBothPmsPopup(false);
   if (detailed.error) {
     state.allApps = [];
     state.filtered = [];
@@ -3357,12 +3438,14 @@ async function fetchUpdatesOutput(){
     try {
       return await startUpdatesStream();
     } catch (err) {
+      if (err?.error === 'external-update-running' || err?.message === 'external-update-running') throw err;
       console.warn('Streaming updates failed, fallback to am-action', err);
       activeUpdateStreamId = null;
     }
   }
   if (!window.electronAPI?.amAction) return { output: '' };
   const res = await window.electronAPI.amAction('__update_all__');
+  if (res === 'external-update-running') throw new Error('external-update-running');
   const output = typeof res === 'string' ? res : (res ? String(res) : '');
   if (output) {
     revealUpdatesTerminal();
@@ -3393,8 +3476,13 @@ runUpdatesBtn?.addEventListener('click', async () => {
     await refreshAfterUpdates();
   } catch (err) {
     console.error('Updates failed', err);
-    showToast(t('toast.updateFailed') || t('error.global', { msg: 'Update failed' }));
-    if (updateFinalMessage) updateFinalMessage.textContent = t('updates.error') || t('error.global', { msg: 'Error during update' });
+    if (err?.error === 'external-update-running' || err?.message === 'external-update-running') {
+      showToast(t('toast.updateAlreadyRunning'));
+      if (updateFinalMessage) updateFinalMessage.textContent = t('toast.updateAlreadyRunningDetail');
+    } else {
+      showToast(t('toast.updateFailed') || t('error.global', { msg: 'Update failed' }));
+      if (updateFinalMessage) updateFinalMessage.textContent = t('updates.error') || t('error.global', { msg: 'Error during update' });
+    }
     if (updateResult) updateResult.style.display = 'block';
   } finally {
     updateInProgress = false;
