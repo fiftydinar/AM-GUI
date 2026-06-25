@@ -1395,7 +1395,7 @@ function removeFromQueue(name){
 
 function refreshDetailsInstallButtonForQueue(){
   if (!detailsInstallBtn || !detailsInstallBtn.getAttribute('data-name')) return;
-  detailsInstallBtn.classList.remove('loading'); // systematically remove spinner
+  detailsInstallBtn.classList.remove('loading');
   const name = detailsInstallBtn.getAttribute('data-name');
   if (!name) return;
   // Active en cours
@@ -3635,6 +3635,12 @@ let currentInstallId = null;
 let currentInstallStart = 0;
 let installElapsedInterval = null;
 
+function setInstallEtaDisplay(etaText, active) {
+  if (!installProgressEtaLabel) return;
+  installProgressEtaLabel.classList.toggle('eta-spinning', !!active);
+  installProgressEtaLabel.textContent = etaText || '';
+}
+
 
 function startStreamingInstall(name, scope){
   initXtermLog();
@@ -3652,6 +3658,7 @@ function startStreamingInstall(name, scope){
       installStream.hidden = false;
       if (installStreamElapsed) installStreamElapsed.textContent='0s';
       if (installProgressPercentLabel) installProgressPercentLabel.textContent = '';
+      setInstallEtaDisplay('', true);
       if (installProgressBar) {
         installProgressBar.value = 0;
         installProgressBar.max = 100;
@@ -3724,20 +3731,36 @@ if (window.electronAPI.onInstallProgress){
           return;
         }
 
-        // Look for patterns like "   6%[>" or " 99%[" or "100%[" (allows leading spaces)
-        const percentMatch = ansiCleaned.match(/\s(\d{1,3})%\s*\[/);
-        if (percentMatch) {
-          let percent = parseInt(percentMatch[1], 10);
-          if (!isNaN(percent)) {
-            if (installProgressPercentLabel) installProgressPercentLabel.textContent = percent + '%';
-            if (installProgressBar) installProgressBar.value = percent;
+        // Accept multiple progress formats (wget/curl/custom bars) instead of only "%[".
+        const percentCandidates = [];
+        const percentRegex = /(\d{1,3}(?:[\.,]\d+)?)\s*%/g;
+        let percentHit;
+        while ((percentHit = percentRegex.exec(ansiCleaned)) !== null) {
+          const p = Math.round(parseFloat(String(percentHit[1]).replace(',', '.')));
+          if (!Number.isNaN(p) && p >= 0 && p <= 100) percentCandidates.push(p);
+        }
+        const ratioMatch = ansiCleaned.match(/(?:^|\s)(\d{1,6})\s*\/\s*(\d{1,6})(?=\s|$)/);
+        if (ratioMatch) {
+          const done = parseInt(ratioMatch[1], 10);
+          const total = parseInt(ratioMatch[2], 10);
+          if (!Number.isNaN(done) && !Number.isNaN(total) && total > 0 && done >= 0) {
+            percentCandidates.push(Math.round((done / total) * 100));
           }
         }
-        // Extraction brute du temps restant (formats "eta ...", "ETA ...", "Temps restant ...", "remaining ...")
+        if (percentCandidates.length) {
+          const percent = Math.max(0, Math.min(100, Math.max(...percentCandidates)));
+          if (installProgressPercentLabel) installProgressPercentLabel.textContent = percent + '%';
+          if (installProgressBar) installProgressBar.value = percent;
+        }
+        // ETA extraction with broader patterns ("ETA 00:12", "00:12 ETA", "remaining 12s", etc.)
         let eta = '';
-        let m = ansiCleaned.match(/(?:ETA|eta|Temps restant|remaining)[\s:]+([^\s][^\r\n]*)/i);
-        if (m) eta = m[1].trim();
-        if (installProgressEtaLabel) installProgressEtaLabel.textContent = eta ? `⏳ ${eta}` : '';
+        let m = ansiCleaned.match(/(?:ETA|eta|Temps restant|remaining)[\s:=]+([0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?|\d+\s*(?:s|sec|min|m)\b|[^\r\n]+)/i);
+        if (m && m[1]) eta = m[1].trim();
+        if (!eta) {
+          const reverseEta = ansiCleaned.match(/([0-9]{1,2}:[0-9]{2}(?::[0-9]{2})?)\s*(?:ETA|eta)\b/i);
+          if (reverseEta && reverseEta[1]) eta = reverseEta[1].trim();
+        }
+        setInstallEtaDisplay(eta, true);
       }
       // (Elapsed time is now handled by the JS timer)
       return;
@@ -3747,6 +3770,7 @@ if (window.electronAPI.onInstallProgress){
         if (installStreamStatus) installStreamStatus.textContent = t('install.status');
         refreshAllInstallButtons();
         if (installProgressBar) installProgressBar.value = 0;
+        setInstallEtaDisplay('', true);
         break;
       case 'error':
         if (installStreamStatus) installStreamStatus.textContent = t('install.error') || 'Erreur';
@@ -3754,6 +3778,7 @@ if (window.electronAPI.onInstallProgress){
         detailsInstallBtn?.removeAttribute('disabled');
         setTimeout(()=> { if (installStream) installStream.hidden = true; }, 5000);
         if (installProgressBar) installProgressBar.value = 0;
+        setInstallEtaDisplay('', false);
         if (installElapsedInterval) { clearInterval(installElapsedInterval); installElapsedInterval = null; }
         break;
       case 'cancelled':
@@ -3763,6 +3788,7 @@ if (window.electronAPI.onInstallProgress){
           detailsInstallBtn.disabled = false;
         }
         if (installProgressBar) installProgressBar.value = 0;
+        setInstallEtaDisplay('', false);
         if (installElapsedInterval) { clearInterval(installElapsedInterval); installElapsedInterval = null; }
         setTimeout(()=> { if (installStream) installStream.hidden = true; }, 2000);
         // (Fix reverted: no longer refresh list or details here)
@@ -3770,6 +3796,7 @@ if (window.electronAPI.onInstallProgress){
       case 'done':
         if (installStreamStatus) installStreamStatus.textContent = t('install.done') || 'Done';
         if (installProgressBar) installProgressBar.value = 100;
+        setInstallEtaDisplay('', false);
         if (installElapsedInterval) { clearInterval(installElapsedInterval); installElapsedInterval = null; }
         setTimeout(()=> { if (installStream) installStream.hidden = true; }, 2000);
         // --- Logical continuation from old code (merge the two 'done' handlers) ---
